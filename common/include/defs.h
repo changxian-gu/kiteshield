@@ -39,9 +39,13 @@
 
 /* This struct is stored at a predefined offset in the loader code, allowing
  * the packer to copy the RC4 decryption key over the loader. */
-#define KEY_SIZE 16
+#define KEY_SIZE 8
 struct rc4_key {
   uint8_t bytes[KEY_SIZE];
+} __attribute__((packed));
+
+struct des_key {
+  uint8_t bytes[8];
 } __attribute__((packed));
 
 /* Represents a function that has been encrypted/instrumented and that the
@@ -53,7 +57,7 @@ struct function {
   uint32_t len;
 
   /* Key that this function's code is encrypted with */
-  struct rc4_key key;
+  struct des_key key;
 
 /* For logging purposes in debug mode */
 #ifdef DEBUG_OUTPUT

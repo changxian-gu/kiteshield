@@ -379,7 +379,5 @@ int sys_setrlimit(
         int resource,
         struct rlimit *rlim);
 
-void *malloc(size_t size);
-
 #endif /* __KITESHIELD_SYSCALLS_H */
 

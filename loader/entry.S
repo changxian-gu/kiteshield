@@ -16,7 +16,9 @@ _start:
 
   # Load function has the following signature
   # void load(void *entry_stacktop)
+  # 这里到底是什么意思， stacktop？？？？
   mov %rsp, %rdi # entry_stacktop
+  # 调用load函数
   call load
 
   # Return value of load is the address of ld.so to jump to, store it
@@ -41,6 +43,7 @@ _start:
   # normally zeros before handing control to userspace. Unlike %rdx, this isn't
   # strictly necessary, but we'll do it anyways to make things as deterministic
   # as possible.
+  # 清空下面的寄存器
   xor %eax, %eax
   xor %ecx, %ecx
   xor %esi, %esi
@@ -55,5 +58,6 @@ _start:
   xor %r14d, %r14d
   xor %r15d, %r15d
 
+  # 把入口地址取出并跳转到入口地址执行
   pop %rbx
   jmp *%rbx

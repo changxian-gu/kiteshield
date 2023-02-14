@@ -22,8 +22,8 @@
  * loader code.
  */
 void obf_deobf_outer_key(
-    struct rc4_key *old_key,
-    struct rc4_key *new_key,
+    struct des_key *old_key,
+    struct des_key *new_key,
     unsigned char *loader_bin,
     unsigned int loader_bin_size)
 {
@@ -33,8 +33,8 @@ void obf_deobf_outer_key(
   return;
 #endif
 
-  /* Skip the struct rc4_key of course, we just want the code */
-  unsigned int loader_index = sizeof(struct rc4_key);
+  /* Skip the struct des_key of course, we just want the code */
+  unsigned int loader_index = sizeof(struct des_key);
   unsigned int key_index = 0;
   while (loader_index < loader_bin_size) {
     new_key->bytes[key_index] ^= *((unsigned char *) loader_bin + loader_index);

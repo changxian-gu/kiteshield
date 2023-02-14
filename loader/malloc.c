@@ -1,7 +1,6 @@
 #include "loader/include/malloc.h"
 #include "loader/include/debug.h"
 #include "loader/include/syscalls.h"
-
 /* 20 MiB */
 #define HEAP_SIZE (1 << 20)
 

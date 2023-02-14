@@ -2,6 +2,7 @@
 
 #include "common/include/defs.h"
 #include "common/include/rc4.h"
+#include "common/include/des.h"
 #include "common/include/obfuscation.h"
 
 #include "loader/include/types.h"
@@ -9,6 +10,8 @@
 #include "loader/include/elf_auxv.h"
 #include "loader/include/syscalls.h"
 #include "loader/include/anti_debug.h"
+#include "loader/include/string.h"
+
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1 << PAGE_SHIFT)
@@ -19,24 +22,24 @@
 #define PAGE_OFFSET(ptr) ((ptr) & ~(PAGE_MASK))
 
 // 串口
-typedef struct termios termios_t;
-typedef struct serial_data {
-    unsigned char databuf[132];//发送/接受数据
-    int serfd;//串口文件描述符
-} ser_Data;
+// typedef struct termios termios_t;
+// typedef struct serial_data {
+//     unsigned char databuf[132];//发送/接受数据
+//     int serfd;//串口文件描述符
+// } ser_Data;
 
-int serial_communication() {
-    /**
-     * extern void *malloc (size_t __size) __THROW __attribute_malloc__
-     */
-    termios_t *ter_s = malloc(sizeof(ter_s));
-    int serport1fd = sys_open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+// int serial_communication() {
+//     /**
+//      * extern void *malloc (size_t __size) __THROW __attribute_malloc__
+//      */
+//     termios_t *ter_s = ks_malloc(sizeof(ter_s));
+//     int serport1fd = sys_open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY, 0777);
 
-    return serport1fd;
-}
+//     return serport1fd;
+// }
 
 
-struct rc4_key obfuscated_key __attribute__((section(".key")));
+struct des_key obfuscated_key __attribute__((section(".key")));
 
 static void *map_load_section_from_mem(void *elf_start, Elf64_Phdr phdr) {
     uint64_t base_addr = ((Elf64_Ehdr *) elf_start)->e_type == ET_DYN ?
@@ -207,19 +210,22 @@ static void *map_elf_from_mem(
         void **interp_entry,
         void **interp_base) {
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *) elf_start;
+    ks_printf(1, "the elf first byte %d\n", *(char *)elf_start);
 
     int load_addr_set = 0;
     void *load_addr = NULL;
 
     Elf64_Phdr *curr_phdr = elf_start + ehdr->e_phoff;
     Elf64_Phdr *interp_hdr = NULL;
+    ks_printf(1, "phnum: %d\n", ehdr->e_phnum);
     for (int i = 0; i < ehdr->e_phnum; i++) {
         void *seg_addr = NULL;
 
         if (curr_phdr->p_type == PT_LOAD)
             seg_addr = map_load_section_from_mem(elf_start, *curr_phdr);
-        else if (curr_phdr->p_type == PT_INTERP)
+        else if (curr_phdr->p_type == PT_INTERP) {
             interp_hdr = curr_phdr;
+        }
 
         if (!load_addr_set && seg_addr != NULL) {
             load_addr = seg_addr;
@@ -275,30 +281,28 @@ static void setup_auxv(
 
 static void decrypt_packed_bin(
         void *packed_bin_start,
-        size_t packed_bin_size,
-        struct rc4_key *key) {
-    struct rc4_state rc4;
-    rc4_init(&rc4, key->bytes, sizeof(key->bytes));
+        size_t *packed_bin_size,
+        struct des_key *key) {
 
-    DEBUG_FMT("RC4 decrypting binary with key %s", STRINGIFY_KEY(key));
+    DEBUG_FMT("DES decrypting binary with key %s", STRINGIFY_KEY(key));
+    DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
+    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
-    DEBUG_FMT("open serial %d\n", serial_communication());
+    // DEBUG_FMT("open serial %d\n", serial_communication());
 
-
-    unsigned char *curr = packed_bin_start;
-    for (int i = 0; i < packed_bin_size; i++) {
-        *curr = *curr ^ rc4_get_byte(&rc4);
-        curr++;
-    }
-
-    DEBUG_FMT("decrypted %u bytes", packed_bin_size);
+    char* out = (char*)ks_malloc((*packed_bin_size)*sizeof(char));
+    DEBUG_FMT("the val : %d\n", *(char*)out);
+    des_decrypt(packed_bin_start, out, packed_bin_size, key->bytes);
+    DEBUG_FMT("the val : %d\n", *((char*)out));
+    memcpy(packed_bin_start, out, *packed_bin_size);
+    DEBUG_FMT("decrypt success %d", 1);
 }
 
 /* Convenience wrapper around obf_deobf_outer_key to automatically pass in
  * correct loader code offsets. */
 void loader_outer_key_deobfuscate(
-        struct rc4_key *old_key,
-        struct rc4_key *new_key) {
+        struct des_key *old_key,
+        struct des_key *new_key) {
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *) LOADER_ADDR;
 
@@ -313,11 +317,15 @@ void loader_outer_key_deobfuscate(
     void *loader_start = (void *) loader_phdr->p_vaddr + hdr_adjust;
     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
 
+    // 同样，如果定义了调试模式则只把一个key复制到另一个然后返回
     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
 }
 
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
+    ks_malloc_init();
+    // while (1)
+    //     ;
     if (antidebug_proc_check_traced())
         DIE(TRACED_MSG);
 
@@ -348,19 +356,27 @@ void *load(void *entry_stacktop) {
      */
     Elf64_Ehdr *packed_bin_ehdr = (Elf64_Ehdr *) (packed_bin_phdr->p_vaddr);
 
-    struct rc4_key actual_key;
+    DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
+    // 拿到DES的真实KEY
+    struct des_key actual_key;
     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key);
+    DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
+    for (int i = 0; i < 7; i++)
+        actual_key.bytes[i] = 0;
 
+    // 修改解密后的大小（arg2）,成功
     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
-                       packed_bin_phdr->p_memsz,
+                       &(packed_bin_phdr->p_memsz),
                        &actual_key);
 
 
-    /* Entry point for ld.so if this is a statically linked binary, otherwise
+    /* Entry point for ld.so if this is not a statically linked binary, otherwise
      * map_elf_from_mem will not touch this and it will be set below. */
     void *interp_entry = NULL;
     void *interp_base = NULL;
+    sys_write(1, "inter\n", 7);
     void *load_addr = map_elf_from_mem(packed_bin_ehdr, &interp_entry, &interp_base);
+    sys_write(1, "inter\n", 7);
     DEBUG_FMT("binary base address is %p", load_addr);
 
     void *program_entry = packed_bin_ehdr->e_type == ET_EXEC ?
@@ -379,6 +395,6 @@ void *load(void *entry_stacktop) {
      */
     void *initial_entry = interp_entry == NULL ? program_entry : interp_entry;
     DEBUG_FMT("control will be passed to packed app at %p", initial_entry);
+    // 如果我们的elf是静态链接的，就直接返回entry，否则会交给动态链接器处理
     return initial_entry;
 }
-

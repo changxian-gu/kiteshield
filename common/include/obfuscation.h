@@ -3,8 +3,8 @@
 
 #include "common/include/defs.h"
 
-void obf_deobf_outer_key(struct rc4_key *old_key,
-                         struct rc4_key *new_key,
+void obf_deobf_outer_key(struct des_key *old_key,
+                         struct des_key *new_key,
                          unsigned char *loader_bin,
                          unsigned int loader_bin_size);
 

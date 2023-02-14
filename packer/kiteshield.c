@@ -16,6 +16,7 @@
 #include "common/include/obfuscation.h"
 #include "common/include/defs.h"
 #include "packer/include/elfutils.h"
+#include "common/include/des.h"
 
 #include "loader/out/generated_loader_rt.h"
 #include "loader/out/generated_loader_no_rt.h"
@@ -117,14 +118,15 @@ static int produce_output_elf(
         struct mapped_elf *elf,
         void *loader,
         size_t loader_size) {
-    /* The entry address is located right after the struct rc4_key (used for
+    /* The entry address is located right after the struct des_key (used for
      * passing decryption key and other info to loader), which is the first
-     * sizeof(struct rc4_key) bytes of the loader code (guaranteed by the linker
+     * sizeof(struct des_key) bytes of the loader code (guaranteed by the linker
      * script) */
+    // 跳过打包后的ELF头和两个prog header和一个key的大小，正好到达loader的.text的第一个字节处
     Elf64_Addr entry_vaddr = LOADER_ADDR +
                              sizeof(Elf64_Ehdr) +
                              (sizeof(Elf64_Phdr) * 2) +
-                             sizeof(struct rc4_key);
+                             sizeof(struct des_key);
     Elf64_Ehdr ehdr;
     ehdr.e_ident[EI_MAG0] = ELFMAG0;
     ehdr.e_ident[EI_MAG1] = ELFMAG1;
@@ -148,30 +150,37 @@ static int produce_output_elf(
     ehdr.e_phentsize = sizeof(Elf64_Phdr);
     ehdr.e_phnum = 2;
     ehdr.e_shentsize = sizeof(Elf64_Shdr);
-    ehdr.e_shnum = 0;
+    ehdr.e_shnum = 1;
     ehdr.e_shstrndx = SHN_UNDEF;
-
+    // 写入ELF头
     CK_NEQ_PERROR(fwrite(&ehdr, sizeof(ehdr), 1, output_file), 0);
 
     /* Size of the first segment include the size of the ehdr and two phdrs */
     size_t hdrs_size = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
 
     /* Program header for loader */
+    // int loader_offset = ftell(output_file) + 2 * sizeof(Elf64_Phdr);
     Elf64_Phdr loader_phdr;
     loader_phdr.p_type = PT_LOAD;
+    //为什么偏移量是0？？？不需要跳过两个program header 和 ELF header吗？？？？还是说不重要？？
+    // 懂了，是没有必要， 因为入口地址就设置的是loader的地址，这个填不填无所谓了，当然，也可以计算
+    // ELF header + 2 * program header
     loader_phdr.p_offset = 0;
     loader_phdr.p_vaddr = LOADER_ADDR;
     loader_phdr.p_paddr = loader_phdr.p_vaddr;
+    // loader本身带有的一个头和两个program header
     loader_phdr.p_filesz = loader_size + hdrs_size;
     loader_phdr.p_memsz = loader_size + hdrs_size;
     loader_phdr.p_flags = PF_R | PF_W | PF_X;
     loader_phdr.p_align = 0x200000;
+    // 写入loader program header
     CK_NEQ_PERROR(fwrite(&loader_phdr, sizeof(loader_phdr), 1, output_file), 0);
 
     /* Program header for packed application */
     int app_offset = ftell(output_file) + sizeof(Elf64_Phdr) + loader_size;
     Elf64_Phdr app_phdr;
     app_phdr.p_type = PT_LOAD;
+    //这个就很正常，ELF header + 2 * program header + loader Segment的长度
     app_phdr.p_offset = app_offset;
     app_phdr.p_vaddr = PACKED_BIN_ADDR + app_offset; /* Keep vaddr aligned */
     app_phdr.p_paddr = app_phdr.p_vaddr;
@@ -179,11 +188,11 @@ static int produce_output_elf(
     app_phdr.p_memsz = elf->size;
     app_phdr.p_flags = PF_R | PF_W;
     app_phdr.p_align = 0x200000;
+    // 写入app program header
     CK_NEQ_PERROR(fwrite(&app_phdr, sizeof(app_phdr), 1, output_file), 0);
 
     /* Loader code/data */
-    CK_NEQ_PERROR(
-            fwrite(loader, loader_size, 1, output_file), 0);
+    CK_NEQ_PERROR(fwrite(loader, loader_size, 1, output_file), 0);
 
     /* Packed application contents */
     CK_NEQ_PERROR(fwrite(elf->start, elf->size, 1, output_file), 0);
@@ -200,15 +209,23 @@ static int get_random_bytes(void *buf, size_t len) {
     return 0;
 }
 
-static void encrypt_memory_range(struct rc4_key *key, void *start, size_t len) {
-    struct rc4_state rc4;
-    rc4_init(&rc4, key->bytes, sizeof(key->bytes));
 
-    uint8_t *curr = start;
-    for (size_t i = 0; i < len; i++) {
-        *curr = *curr ^ rc4_get_byte(&rc4);
-        curr++;
-    }
+// static void encrypt_memory_range(struct rc4_key *key, void *start, size_t len) {
+//     struct rc4_state rc4;
+//     rc4_init(&rc4, key->bytes, sizeof(key->bytes));
+
+//     uint8_t *curr = start;
+//     for (size_t i = 0; i < len; i++) {
+//         *curr = *curr ^ rc4_get_byte(&rc4);
+//         curr++;
+//     }
+// }
+
+static void encrypt_memory_range(struct des_key *key, void *start, size_t* len) {
+    unsigned char* out = (unsigned char*)malloc((*len)*sizeof(char));
+    // 问题， 使用DES加密后密文长度可能会大于明文长度怎么办？ 为elf分配空间的时候多分配8bit可否？
+    des_encrypt(start, out, len, key->bytes);
+    memcpy(start, out, *len);
 }
 
 static uint64_t get_base_addr(Elf64_Ehdr *ehdr) {
@@ -330,7 +347,7 @@ static int process_func(
     tp->value = *func_start;
     tp->fcn_i = rt_info->nfuncs;
 
-    encrypt_memory_range(&fcn->key, func_start, func_sym->st_size);
+    encrypt_memory_range(&fcn->key, func_start, &(func_sym->st_size));
 
     *func_start = INT3;
 
@@ -510,19 +527,25 @@ static int apply_outer_encryption(
         struct mapped_elf *elf,
         void *loader_start,
         size_t loader_size) {
-    struct rc4_key key;
-    CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+    
+    struct des_key key;
+    // CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+    for (int i = 0; i < 8; i++)
+        key.bytes[i] = 0;
     info("applying outer encryption with key %s", STRINGIFY_KEY(key));
 
     /* Encrypt the actual binary */
-    encrypt_memory_range(&key, elf->start, elf->size);
+    // 修改elf长度
+    encrypt_memory_range(&key, elf->start, &(elf->size));
 
     /* Obfuscate Key */
-    struct rc4_key obfuscated_key;
+    struct des_key obfuscated_key;
+    // 在调试模式下，混淆的key里存储的就是原来的key
     obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
+    info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
 
     /* Copy over obfuscated key so the loader can decrypt */
-    *((struct rc4_key *) loader_start) = obfuscated_key;
+    *((struct des_key *) loader_start) = obfuscated_key;
 
     return 0;
 }
@@ -563,7 +586,7 @@ static int full_strip(struct mapped_elf *elf) {
     size_t new_size = 0;
     info("stripping input binary");
 
-    /* Calculate minimum size needed to contain all program headers */
+    /* Calculate minimum size needed to contain all program headers 应该是segment？ */
     for (int i = 0; i < elf->ehdr->e_phnum; i++) {
         size_t seg_end = curr_phdr->p_offset + curr_phdr->p_filesz;
         if (seg_end > new_size)
@@ -580,6 +603,8 @@ static int full_strip(struct mapped_elf *elf) {
         info("output binary may be corrupt!");
     }
 
+    // +8bytes......
+    new_size += 8;
     void *new_elf = malloc(new_size);
     CK_NEQ_PERROR(new_elf, NULL);
     memcpy(new_elf, elf->start, new_size);
@@ -646,9 +671,10 @@ int main(int argc, char *argv[]) {
      * no-runtime version if we're only applying layer 1 or the runtime version
      * if we're applying layer 1 and 2 encryption.
      */
+    ks_malloc_init();
     void *loader;
     size_t loader_size;
-    // 是否有1层加密
+    // 是否需要对内层加密
     if (!layer_one_only) {
         struct runtime_info *rt_info = NULL;
         ret = apply_inner_encryption(&elf, &rt_info);
@@ -671,6 +697,7 @@ int main(int argc, char *argv[]) {
         err("could not strip binary");
         return -1;
     }
+    printf("elf size: %lu\n\n", elf.size);
 
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);
@@ -678,6 +705,7 @@ int main(int argc, char *argv[]) {
         err("could not apply outer encryption");
         return -1;
     }
+    printf("elf size: %lu\n\n", elf.size);
 
     /* Write output ELF */
     FILE *output_file;
@@ -689,10 +717,10 @@ int main(int argc, char *argv[]) {
     }
 
     CK_NEQ_PERROR(fclose(output_file), EOF);
-    CK_NEQ_PERROR(
-            chmod(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH), -1);
+    CK_NEQ_PERROR(chmod(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH), -1);
 
     info("output ELF has been written to %s", output_path);
+    ks_malloc_deinit();
     return 0;
 }
 

@@ -24,7 +24,10 @@ void parse_mapped_elf(
      * elf program header table 的地址等于elf的头地址加program的偏移量
      */
     elf->phdr_tbl = (Elf64_Phdr *) (elf->start + elf->ehdr->e_phoff);
-    elf->shdr_tbl = (Elf64_Shdr *) (elf->start + elf->ehdr->e_shoff);
+    if (elf->ehdr->e_shoff == 0)
+        elf->shdr_tbl = NULL;
+    else
+        elf->shdr_tbl = (Elf64_Shdr *) (elf->start + elf->ehdr->e_shoff);
 
     /* elf_get_sec_by_name only depends on shstrtab being set */
     /**

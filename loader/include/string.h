@@ -2,6 +2,7 @@
 #define __KITESHIELD_STRING_H
 
 #include "loader/include/types.h"
+#include <stdarg.h>
 
 void ks_vsnprintf(
         char *str,
