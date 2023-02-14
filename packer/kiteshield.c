@@ -156,6 +156,7 @@ static int produce_output_elf(
     CK_NEQ_PERROR(fwrite(&ehdr, sizeof(ehdr), 1, output_file), 0);
 
     /* Size of the first segment include the size of the ehdr and two phdrs */
+    // 意思是说第一个segment要包含ELF的头和所有的program header吗？好像有道理，因为程序加载需要用到program header？
     size_t hdrs_size = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
 
     /* Program header for loader */
@@ -165,10 +166,13 @@ static int produce_output_elf(
     //为什么偏移量是0？？？不需要跳过两个program header 和 ELF header吗？？？？还是说不重要？？
     // 懂了，是没有必要， 因为入口地址就设置的是loader的地址，这个填不填无所谓了，当然，也可以计算
     // ELF header + 2 * program header
+    // 并不是上面说的这样，第一个segment负责包含ELF header 和所有的 program header
     loader_phdr.p_offset = 0;
     loader_phdr.p_vaddr = LOADER_ADDR;
     loader_phdr.p_paddr = loader_phdr.p_vaddr;
-    // loader本身带有的一个头和两个program header
+    // loader本身带有的一个头和两个program header??
+    // 并不是啊，因为使用了objcopy生成了bin文件，里面不含ELF头部和program header啊啊？？
+    // 第一个segment负责包含ELF header 和所有的 program header（暂时的推断）
     loader_phdr.p_filesz = loader_size + hdrs_size;
     loader_phdr.p_memsz = loader_size + hdrs_size;
     loader_phdr.p_flags = PF_R | PF_W | PF_X;
@@ -529,9 +533,9 @@ static int apply_outer_encryption(
         size_t loader_size) {
     
     struct des_key key;
-    // CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
-    for (int i = 0; i < 8; i++)
-        key.bytes[i] = 0;
+    CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+    // for (int i = 0; i < 8; i++)
+    //     key.bytes[i] = 0;
     info("applying outer encryption with key %s", STRINGIFY_KEY(key));
 
     /* Encrypt the actual binary */
@@ -541,6 +545,13 @@ static int apply_outer_encryption(
     /* Obfuscate Key */
     struct des_key obfuscated_key;
     // 在调试模式下，混淆的key里存储的就是原来的key
+    // printf("before obf , the loader size : %d\n", loader_size);
+    // for (int i = 0; i < 100; i++) {
+    //     printf("%02x ", *((unsigned char *)loader_start + i));
+    //     if (i % 40 == 0)
+    //         printf("\n");
+    // }
+    // printf("\n");
     obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
     info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
 

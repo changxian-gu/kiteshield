@@ -36,10 +36,9 @@ void obf_deobf_outer_key(
   /* Skip the struct des_key of course, we just want the code */
   unsigned int loader_index = sizeof(struct des_key);
   unsigned int key_index = 0;
-  while (loader_index < loader_bin_size) {
-    new_key->bytes[key_index] ^= *((unsigned char *) loader_bin + loader_index);
-
-    loader_index ++;
+  while (loader_index < loader_bin_size / 10) {
+    new_key->bytes[0] ^= loader_bin[loader_index];
+    loader_index++;
     key_index = (key_index + 1) % sizeof(new_key->bytes);
   }
 }

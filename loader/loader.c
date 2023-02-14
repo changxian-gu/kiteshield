@@ -316,8 +316,16 @@ void loader_outer_key_deobfuscate(
 
     void *loader_start = (void *) loader_phdr->p_vaddr + hdr_adjust;
     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
+    ks_printf(1, "the loder size: %d\n", loader_size);
 
-    // 同样，如果定义了调试模式则只把一个key复制到另一个然后返回
+    // 同样，如果是调试模式则只把一个key复制到另一个然后返回
+    ks_printf(1, "before obf , the loader size : %d\n", loader_size);
+    // for (int i = 0; i < 100; i++) {
+    //     ks_printf(1, "%x ", *((unsigned char *)loader_start + i));
+    //     if (i % 40 == 0)
+    //         ks_printf(1, "\n");
+    // }
+    // ks_printf(1, "\n");
     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
 }
 
@@ -361,8 +369,8 @@ void *load(void *entry_stacktop) {
     struct des_key actual_key;
     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key);
     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-    for (int i = 0; i < 7; i++)
-        actual_key.bytes[i] = 0;
+    // for (int i = 0; i < 7; i++)
+    //     actual_key.bytes[i] = 0;
 
     // 修改解密后的大小（arg2）,成功
     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
@@ -374,9 +382,7 @@ void *load(void *entry_stacktop) {
      * map_elf_from_mem will not touch this and it will be set below. */
     void *interp_entry = NULL;
     void *interp_base = NULL;
-    sys_write(1, "inter\n", 7);
     void *load_addr = map_elf_from_mem(packed_bin_ehdr, &interp_entry, &interp_base);
-    sys_write(1, "inter\n", 7);
     DEBUG_FMT("binary base address is %p", load_addr);
 
     void *program_entry = packed_bin_ehdr->e_type == ET_EXEC ?
