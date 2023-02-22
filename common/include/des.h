@@ -21,6 +21,5 @@ void process_message(unsigned char* message_piece, unsigned char* processed_piec
 void des_init(des_key key);
 void des_encrypt(unsigned char* in, unsigned char* out, unsigned long * len, des_key key);
 void des_decrypt(unsigned char* in, unsigned char* out, unsigned long * len, des_key key);
-void print_hex(unsigned char* data, int len);
 
 #endif

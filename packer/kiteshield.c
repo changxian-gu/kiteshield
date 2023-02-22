@@ -226,9 +226,12 @@ static int get_random_bytes(void *buf, size_t len) {
 // }
 
 static void encrypt_memory_range(struct des_key *key, void *start, size_t* len) {
-    unsigned char* out = (unsigned char*)malloc((*len)*sizeof(char));
-    // 问题， 使用DES加密后密文长度可能会大于明文长度怎么办？ 为elf分配空间的时候多分配8bit可否？
+    unsigned char* out = (unsigned char*)malloc((*len + 8)*sizeof(char));
+    printf("--------before enc, len : %lu\n", *len);
+    // 使用DES加密后密文长度可能会大于明文长度怎么办?
+    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
     des_encrypt(start, out, len, key->bytes);
+    printf("--------after enc, len : %lu\n", *len);
     memcpy(start, out, *len);
 }
 
@@ -282,19 +285,28 @@ static uint64_t get_base_addr(Elf64_Ehdr *ehdr) {
  * ret instructions, applicable jmp instructions) with int3 instructions and
  * encrypts it with a newly generated key.
  */
+/* elf是一个映射elf文件的结构体指针
+ * func_sym 是一个symbol表象的指针
+ * rt_info 是在加密函数过程中用来记录信息的
+ * func_arr 是一个指向结构体的指针，其中包含了函数的开始地址、长度以及加密用的key
+ * tp_arr 保存了函数的入口点
+*/
 static int process_func(
         struct mapped_elf *elf,
         Elf64_Sym *func_sym,
         struct runtime_info *rt_info,
         struct function *func_arr,
         struct trap_point *tp_arr) {
+    // 拿到当前函数的开始地址
     uint8_t *func_start = elf_get_sym_location(elf, func_sym);
     uint64_t base_addr = get_base_addr(elf->ehdr);
+    // 拿到当前要处理的函数
     struct function *fcn = &func_arr[rt_info->nfuncs];
 
     fcn->id = rt_info->nfuncs;
     fcn->start_addr = base_addr + func_sym->st_value;
     fcn->len = func_sym->st_size;
+    // 随机生成用来加密函数的key
     CK_NEQ_PERROR(get_random_bytes(fcn->key.bytes, sizeof(fcn->key.bytes)), -1);
 #ifdef DEBUG_OUTPUT
     strncpy(fcn->name, elf_get_sym_name(elf, func_sym), sizeof(fcn->name));
@@ -348,12 +360,17 @@ static int process_func(
             (struct trap_point *) &tp_arr[rt_info->ntraps++];
     tp->addr = base_addr + func_sym->st_value;
     tp->type = TP_FCN_ENTRY;
-    tp->value = *func_start;
     tp->fcn_i = rt_info->nfuncs;
 
-    encrypt_memory_range(&fcn->key, func_start, &(func_sym->st_size));
+    int align = 8;
+    size_t size_need_to_enc = func_sym->st_size - func_sym->st_size % align;
+    encrypt_memory_range(&fcn->key, func_start, &size_need_to_enc);
+    
+    // 记录下第一个字节原来的值，下面用INT3替换掉
+    tp->value = *func_start;
 
     *func_start = INT3;
+    printf("the function len is--------------:%d\n", fcn->len);
 
     rt_info->nfuncs++;
 
@@ -370,7 +387,7 @@ static int apply_inner_encryption(
     info("applying inner encryption");
 
     /**
-     * 如果section的偏移为0，符号表为空，则无法加密内部加密
+     * 如果section的偏移为0，符号表为空，则无法内部加密
      */
     if (elf->ehdr->e_shoff == 0 || !elf->symtab) {
         info("binary is stripped, not applying inner encryption");
@@ -415,6 +432,8 @@ static int apply_inner_encryption(
          */
         uint64_t base = get_base_addr(elf->ehdr);
         struct function *alias = NULL;
+        printf("functions num : %d==============\n", (*rt_info)->nfuncs);
+        // nfunc代表了已经加密的函数的个数，这个循环是在遍历，看是否函数会被重复加密
         for (size_t i = 0; i < (*rt_info)->nfuncs; i++) {
             struct function *fcn = &fcn_arr[i];
 
@@ -467,6 +486,7 @@ static int apply_inner_encryption(
          *  in order to support encrypting the small amount of hand coded asm
          *  functions in glibc that are like this.
          */
+        // 看一下加密的函数是不是在要加密的函数范围里面
         if (!elf_sym_in_text(elf, sym)) {
             verbose("not encrypting function %s as it's not in .text",
                     elf_get_sym_name(elf, sym));
@@ -614,8 +634,6 @@ static int full_strip(struct mapped_elf *elf) {
         info("output binary may be corrupt!");
     }
 
-    // +8bytes......
-    new_size += 8;
     void *new_elf = malloc(new_size);
     CK_NEQ_PERROR(new_elf, NULL);
     memcpy(new_elf, elf->start, new_size);

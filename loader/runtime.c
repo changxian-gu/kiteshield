@@ -1,8 +1,11 @@
+#define USE_RUNTIME
 #ifdef USE_RUNTIME
+
 
 #include "common/include/defs.h"
 #include "common/include/obfuscation.h"
 #include "common/include/rc4.h"
+#include "common/include/des.h"
 
 #include "loader/include/anti_debug.h"
 #include "loader/include/debug.h"
@@ -122,6 +125,7 @@ static struct function *get_fcn_at_addr(uint64_t addr) {
 }
 
 static void set_byte_at_addr(pid_t tid, uint64_t addr, uint8_t value) {
+    // 因为PEEKTEXT一次取一个字（两个字节）， 所以需要做些处理
     long word;
     long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) addr, &word);
     DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
@@ -162,6 +166,45 @@ static void single_step(pid_t tid) {
             WSTOPSIG(wstatus) != SIGTRAP,
             "child was stopped by unexpected signal %u during single step, exiting",
             WSTOPSIG(wstatus));
+}
+
+void print_hex(unsigned char* buf, int len) {
+    for (int i = 0; i < len; i++) {
+        ks_printf(1, "%x ", buf[i]);
+    }
+    ks_printf(1, "\n");
+}
+
+static void des_decrypt_fcn(pid_t tid, struct function *fcn) {
+    int align = 8;
+    int size = fcn->len - fcn->len % align;
+    size_t remaining = size;
+    char* in = (char *)ks_malloc(remaining * sizeof(char));
+    char* out = (char *)ks_malloc(remaining * sizeof(char));
+    uint8_t *curr_addr = (uint8_t *) fcn->start_addr;
+    while (remaining > 0) {
+        long word;
+        long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) curr_addr, &word);
+        DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
+        
+        memcpy(in + size - remaining, &word, 8);
+        remaining -= 8;
+        curr_addr += 8;
+    }
+    print_hex(in, size);
+    des_decrypt((unsigned char*)in, out, &size, fcn->key.bytes);
+    print_hex(out, size);
+    remaining = size;
+    curr_addr = (uint8_t *)fcn->start_addr;
+    while (remaining > 0) {
+        long word = *((long *)(out + size - remaining));
+        long res = sys_ptrace(PTRACE_POKETEXT, tid, curr_addr, (void *)word);
+        DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
+        remaining -= 8;
+        curr_addr += 8;
+    }
+    ks_free(in);
+    ks_free(out);
 }
 
 static void rc4_xor_fcn(pid_t tid, struct function *fcn) {
@@ -269,12 +312,14 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
     DEBUG("start handle fcn entry");
     DIE_IF(antidebug_proc_check_traced(), TRACED_MSG);
     struct function *fcn = FCN_FROM_TP(tp);
+    DEBUG_FMT("the func len : %d", fcn->len);
+    DEBUG_FMT("the func len encypted : %d", fcn->len - fcn->len % 8);
 
+    set_byte_at_addr(thread->tid, tp->addr, tp->value);
     if (FCN_REFCNT(thread, fcn) == 0) {
         DEBUG_FMT("tid %d: entering encrypted function %s decrypting with key %s",
                   thread->tid, fcn->name, STRINGIFY_KEY(&fcn->key));
-
-        rc4_xor_fcn(thread->tid, fcn);
+        des_decrypt_fcn(thread->tid, fcn);
     } else {
         /* This thread hit the trap point for entrance to this function, but an
          * earlier thread decrypted it.
@@ -283,8 +328,9 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
                   fcn->name);
     }
 
-    set_byte_at_addr(thread->tid, tp->addr, tp->value);
+    DEBUG("AM I HERE???");
     single_step(thread->tid);
+    DEBUG("AM I HERE2???");
     set_byte_at_addr(thread->tid, tp->addr, INT3);
 
     FCN_ENTER(thread, fcn);
@@ -321,7 +367,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                       "with key %s",
                       thread->tid, prev_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
-            rc4_xor_fcn(thread->tid, prev_fcn);
+            des_decrypt_fcn(thread->tid, prev_fcn);
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, INT3);
         }
 
@@ -343,7 +389,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                           "with key %s",
                           thread->tid, new_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
-                rc4_xor_fcn(thread->tid, new_fcn);
+                des_decrypt_fcn(thread->tid, new_fcn);
                 set_byte_at_addr(thread->tid, new_fcn->start_addr, INT3);
             }
 
@@ -362,7 +408,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
         /* Encrypt prev_fcn (function we're leaving) if we were the last one
          * executing in it */
         if (FCN_REFCNT(thread, prev_fcn) == 0) {
-            rc4_xor_fcn(thread->tid, prev_fcn);
+            des_decrypt_fcn(thread->tid, prev_fcn);
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, INT3);
         }
     } else {
@@ -456,7 +502,7 @@ void destroy_thread(struct thread_list *list, struct thread *thread) {
         while (curr_bt) {
             FCN_DEC_REF(thread, curr_bt->fcn);
             if (FCN_REFCNT(thread, curr_bt->fcn) == 0) {
-                rc4_xor_fcn(thread->tid, curr_bt->fcn);
+                des_decrypt_fcn(thread->tid, curr_bt->fcn);
                 set_byte_at_addr(thread->tid, curr_bt->fcn->start_addr, INT3);
             }
             curr_bt = curr_bt->next;
@@ -710,7 +756,7 @@ void setup_initial_thread(pid_t tid, struct thread_list *tlist) {
     /* Set up initial forked child (special case of handle_new_thread) */
     long ret;
     while (1) {
-        /* Spin while we wait for the child do do a ptrace(PTRACE_TRACEME, ...) and
+        /* Spin while we wait for the child do a ptrace(PTRACE_TRACEME, ...) and
          * then a raise(SIGSTOP). */
         ret = sys_ptrace(PTRACE_SETOPTIONS, tid, 0,
                          (void *) (PTRACE_O_EXITKILL | PTRACE_O_TRACECLONE |
@@ -900,6 +946,8 @@ void do_fork() {
     pid_t pid = sys_fork();
     DIE_IF_FMT(pid < 0, "fork failed with error %d", pid);
 
+    // 父进程做的事情
+    // pid是子进程的id
     if (pid != 0) {
         runtime_start(pid);
         sys_exit(0); /* Only the child returns from do_fork */

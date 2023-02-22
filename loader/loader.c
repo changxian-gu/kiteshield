@@ -210,7 +210,6 @@ static void *map_elf_from_mem(
         void **interp_entry,
         void **interp_base) {
     Elf64_Ehdr *ehdr = (Elf64_Ehdr *) elf_start;
-    ks_printf(1, "the elf first byte %d\n", *(char *)elf_start);
 
     int load_addr_set = 0;
     void *load_addr = NULL;

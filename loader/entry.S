@@ -12,6 +12,7 @@ _start:
 
   # We've now forked. The runtime is running in our parent and will not return.
   # here. Only the child will execute the code below.
+  # 下面的内容只有子进程会执行
 #endif
 
   # Load function has the following signature

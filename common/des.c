@@ -472,11 +472,10 @@ void des_encrypt(unsigned char* in, unsigned char* out, unsigned long* len, des_
 	while (block_count < number_of_blocks) {
 		memcpy(data_block, in + block_count*8, 8);
 		if (block_count == number_of_blocks - 1) {
-			padding = 8 - *len%8;
-			if (padding < 8) {
+			padding = *len % 8 ? 8 - * len % 8 : 0;
+			if (padding < 8 && padding != 0) {
 				memset((data_block + 8 - padding), (unsigned char)padding, padding);
 			}
-
 			process_message(data_block, processed_block, key_sets, ENCRYPTION_MODE);
 			memcpy(out + block_count*8, processed_block, 8);
 			*len = *len + padding;
@@ -494,18 +493,17 @@ void des_encrypt(unsigned char* in, unsigned char* out, unsigned long* len, des_
 void des_decrypt(unsigned char* in, unsigned char* out, unsigned long* len, des_key key) {
 	unsigned short int padding = 0;
 	unsigned long block_count = 0;
+	// 块数上取整
 	unsigned long number_of_blocks = *len / 8 + ((*len%8)?1:0);
 	unsigned char* data_block = (unsigned char*) ks_malloc(8*sizeof(char));
 	unsigned char* processed_block = (unsigned char*) ks_malloc(8*sizeof(char));
-	print("I am heere\n");
 	// 无法分配这么大的空间了。。。哪里的原因呢？？？
 	// 还是绕不过这个问题，在debug模式能成功运行，但在开启antidebug功能后，又无法分配了，是内存不够的问题吗？如果是的话应该怎么解决呢？
 	key_set* key_sets = (key_set*)ks_malloc(17*sizeof(key_set));
-	print("ks_malloc success\n");
 	generate_sub_keys(key, key_sets);
 	while (block_count < number_of_blocks) {
 		memcpy(data_block, in + block_count*8, 8);
-		if (block_count == number_of_blocks - 1) {
+		if (block_count == number_of_blocks - 1 && *len % 8 != 0) {
 			process_message(data_block, processed_block, key_sets, DECRYPTION_MODE);
 			padding = processed_block[7];
 			memcpy(out + block_count*8, processed_block, 8);
