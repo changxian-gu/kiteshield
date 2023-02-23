@@ -216,7 +216,6 @@ static void *map_elf_from_mem(
 
     Elf64_Phdr *curr_phdr = elf_start + ehdr->e_phoff;
     Elf64_Phdr *interp_hdr = NULL;
-    ks_printf(1, "phnum: %d\n", ehdr->e_phnum);
     for (int i = 0; i < ehdr->e_phnum; i++) {
         void *seg_addr = NULL;
 
@@ -295,6 +294,7 @@ static void decrypt_packed_bin(
     DEBUG_FMT("the val : %d\n", *((char*)out));
     memcpy(packed_bin_start, out, *packed_bin_size);
     DEBUG_FMT("decrypt success %d", 1);
+    ks_free(out);
 }
 
 /* Convenience wrapper around obf_deobf_outer_key to automatically pass in
@@ -315,16 +315,7 @@ void loader_outer_key_deobfuscate(
 
     void *loader_start = (void *) loader_phdr->p_vaddr + hdr_adjust;
     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
-    ks_printf(1, "the loder size: %d\n", loader_size);
 
-    // 同样，如果是调试模式则只把一个key复制到另一个然后返回
-    ks_printf(1, "before obf , the loader size : %d\n", loader_size);
-    // for (int i = 0; i < 100; i++) {
-    //     ks_printf(1, "%x ", *((unsigned char *)loader_start + i));
-    //     if (i % 40 == 0)
-    //         ks_printf(1, "\n");
-    // }
-    // ks_printf(1, "\n");
     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
 }
 
@@ -401,5 +392,6 @@ void *load(void *entry_stacktop) {
     void *initial_entry = interp_entry == NULL ? program_entry : interp_entry;
     DEBUG_FMT("control will be passed to packed app at %p", initial_entry);
     // 如果我们的elf是静态链接的，就直接返回entry，否则会交给动态链接器处理
+    ks_malloc_deinit();
     return initial_entry;
 }

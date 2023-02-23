@@ -213,25 +213,13 @@ static int get_random_bytes(void *buf, size_t len) {
     return 0;
 }
 
-
-// static void encrypt_memory_range(struct rc4_key *key, void *start, size_t len) {
-//     struct rc4_state rc4;
-//     rc4_init(&rc4, key->bytes, sizeof(key->bytes));
-
-//     uint8_t *curr = start;
-//     for (size_t i = 0; i < len; i++) {
-//         *curr = *curr ^ rc4_get_byte(&rc4);
-//         curr++;
-//     }
-// }
-
 static void encrypt_memory_range(struct des_key *key, void *start, size_t* len) {
     unsigned char* out = (unsigned char*)malloc((*len + 8)*sizeof(char));
-    printf("--------before enc, len : %lu\n", *len);
+    printf("before enc, len : %lu\n", *len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
     des_encrypt(start, out, len, key->bytes);
-    printf("--------after enc, len : %lu\n", *len);
+    printf("after enc, len : %lu\n", *len);
     memcpy(start, out, *len);
 }
 
@@ -316,51 +304,13 @@ static int process_func(
     info("encrypting function %s with key %s",
          elf_get_sym_name(elf, func_sym), STRINGIFY_KEY(fcn->key));
 
-//  uint8_t *code_ptr = func_start;
-//  while (code_ptr < func_start + func_sym->st_size) {
-//    /* Iterate over every instruction in the function and determine if it
-//     * requires instrumentation */
-//    size_t off = (size_t) (code_ptr - func_start);
-//    uint64_t addr = base_addr + func_sym->st_value + off;
-//
-//    INSTRUX ix;
-//    NDSTATUS status = NdDecode(&ix, code_ptr, ND_CODE_64, ND_DATA_64);
-//    if (!ND_SUCCESS(status)) {
-//      err("instruction decoding failed at address %p for function %s",
-//            addr, elf_get_sym_name(elf, func_sym));
-//      return -1;
-//    }
-//
-//    int is_jmp_to_instrument = is_instrumentable_jmp(
-//        &ix,
-//        fcn->start_addr,
-//        func_sym->st_size,
-//        addr);
-//    int is_ret_to_instrument =
-//      ix.Instruction == ND_INS_RETF || ix.Instruction == ND_INS_RETN;
-//
-//    if (is_jmp_to_instrument || is_ret_to_instrument) {
-//      struct trap_point *tp =
-//        (struct trap_point *) &tp_arr[rt_info->ntraps++];
-//
-//      verbose("\tinstrumenting %s instr at address %p", ix.Mnemonic, addr, off);
-//
-//      tp->addr = addr;
-//      tp->type = is_ret_to_instrument ? TP_RET : TP_JMP;
-//      tp->value = *code_ptr;
-//      tp->fcn_i = rt_info->nfuncs;
-//      *code_ptr = INT3;
-//    }
-//
-//    code_ptr += ix.Length;
-//  }
-
     /* Instrument entry point */
     struct trap_point *tp =
             (struct trap_point *) &tp_arr[rt_info->ntraps++];
     tp->addr = base_addr + func_sym->st_value;
     tp->type = TP_FCN_ENTRY;
     tp->fcn_i = rt_info->nfuncs;
+    tp->plain_value = *func_start;
 
     int align = 8;
     size_t size_need_to_enc = func_sym->st_size - func_sym->st_size % align;
@@ -370,7 +320,6 @@ static int process_func(
     tp->value = *func_start;
 
     *func_start = INT3;
-    printf("the function len is--------------:%d\n", fcn->len);
 
     rt_info->nfuncs++;
 
@@ -432,7 +381,6 @@ static int apply_inner_encryption(
          */
         uint64_t base = get_base_addr(elf->ehdr);
         struct function *alias = NULL;
-        printf("functions num : %d==============\n", (*rt_info)->nfuncs);
         // nfunc代表了已经加密的函数的个数，这个循环是在遍历，看是否函数会被重复加密
         for (size_t i = 0; i < (*rt_info)->nfuncs; i++) {
             struct function *fcn = &fcn_arr[i];
@@ -502,26 +450,6 @@ static int apply_inner_encryption(
         /* We need to do this decoding down here as if we don't, sym->st_value
          * could be 0.
          */
-//    uint8_t *func_code_start = elf_get_sym_location(elf, sym);
-//    INSTRUX ix;
-//    NDSTATUS status = NdDecode(&ix, func_code_start, ND_CODE_64, ND_DATA_64);
-//    if (!ND_SUCCESS(status)) {
-//      err("instruction decoding failed at address %p for function %s",
-//          sym->st_value, elf_get_sym_name(elf, sym));
-//      return -1;
-//    }
-//
-//    if (ix.Instruction == ND_INS_JMPNI ||
-//        ix.Instruction == ND_INS_JMPNR ||
-//        ix.Instruction == ND_INS_Jcc ||
-//        ix.Instruction == ND_INS_CALLNI ||
-//        ix.Instruction == ND_INS_CALLNR ||
-//        ix.Instruction == ND_INS_RETN) {
-//      verbose("not encrypting function %s due to first instruction being jmp/ret/call",
-//              elf_get_sym_name(elf, sym));
-//      continue;
-//    }
-
         if (process_func(elf, sym, *rt_info, fcn_arr, tp_arr) == -1) {
             err("error instrumenting function %s", elf_get_sym_name(elf, sym));
             return -1;
@@ -564,14 +492,6 @@ static int apply_outer_encryption(
 
     /* Obfuscate Key */
     struct des_key obfuscated_key;
-    // 在调试模式下，混淆的key里存储的就是原来的key
-    // printf("before obf , the loader size : %d\n", loader_size);
-    // for (int i = 0; i < 100; i++) {
-    //     printf("%02x ", *((unsigned char *)loader_start + i));
-    //     if (i % 40 == 0)
-    //         printf("\n");
-    // }
-    // printf("\n");
     obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
     info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
 
@@ -726,7 +646,6 @@ int main(int argc, char *argv[]) {
         err("could not strip binary");
         return -1;
     }
-    printf("elf size: %lu\n\n", elf.size);
 
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);
@@ -734,7 +653,6 @@ int main(int argc, char *argv[]) {
         err("could not apply outer encryption");
         return -1;
     }
-    printf("elf size: %lu\n\n", elf.size);
 
     /* Write output ELF */
     FILE *output_file;
