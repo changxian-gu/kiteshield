@@ -13,7 +13,7 @@ static void _rshift_word(struct bn* a, int nwords);
 /* Public / Exported functions. */
 void bignum_init(struct bn* n)
 {
-  require(n, "n is null");
+  // require(n, "n is null");
 
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
@@ -25,7 +25,7 @@ void bignum_init(struct bn* n)
 
 void bignum_from_int(struct bn* n, DTYPE_TMP i)
 {
-  require(n, "n is null");
+  // require(n, "n is null");
 
   bignum_init(n);
 
@@ -51,7 +51,7 @@ void bignum_from_int(struct bn* n, DTYPE_TMP i)
 
 int bignum_to_int(struct bn* n)
 {
-  require(n, "n is null");
+  // require(n, "n is null");
 
   int ret = 0;
 
@@ -99,45 +99,45 @@ int bignum_to_int(struct bn* n)
 // }
 
 
-void bignum_to_string(struct bn* n, char* str, int nbytes)
-{
-  require(n, "n is null");
-  require(str, "str is null");
-  require(nbytes > 0, "nbytes must be positive");
-  require((nbytes & 1) == 0, "string format must be in hex -> equal number of bytes");
+// void bignum_to_string(struct bn* n, char* str, int nbytes)
+// {
+//   // require(n, "n is null");
+//   // require(str, "str is null");
+//   // require(nbytes > 0, "nbytes must be positive");
+//   // require((nbytes & 1) == 0, "string format must be in hex -> equal number of bytes");
 
-  int j = BN_ARRAY_SIZE - 1; /* index into array - reading "MSB" first -> big-endian */
-  int i = 0;                 /* index into string representation. */
+//   int j = BN_ARRAY_SIZE - 1; /* index into array - reading "MSB" first -> big-endian */
+//   int i = 0;                 /* index into string representation. */
 
-  /* reading last array-element "MSB" first -> big endian */
-  while ((j >= 0) && (nbytes > (i + 1)))
-  {
-    sprintf(&str[i], SPRINTF_FORMAT_STR, n->array[j]);
-    i += (2 * WORD_SIZE); /* step WORD_SIZE hex-byte(s) forward in the string. */
-    j -= 1;               /* step one element back in the array. */
-  }
+//   /* reading last array-element "MSB" first -> big endian */
+//   while ((j >= 0) && (nbytes > (i + 1)))
+//   {
+//     sprintf(&str[i], SPRINTF_FORMAT_STR, n->array[j]);
+//     i += (2 * WORD_SIZE); /* step WORD_SIZE hex-byte(s) forward in the string. */
+//     j -= 1;               /* step one element back in the array. */
+//   }
 
-  /* Count leading zeros: */
-  j = 0;
-  while (str[j] == '0')
-  {
-    j += 1;
-  }
+//   /* Count leading zeros: */
+//   j = 0;
+//   while (str[j] == '0')
+//   {
+//     j += 1;
+//   }
  
-  /* Move string j places ahead, effectively skipping leading zeros */ 
-  for (i = 0; i < (nbytes - j); ++i)
-  {
-    str[i] = str[i + j];
-  }
+//   /* Move string j places ahead, effectively skipping leading zeros */ 
+//   for (i = 0; i < (nbytes - j); ++i)
+//   {
+//     str[i] = str[i + j];
+//   }
 
-  /* Zero-terminate string */
-  str[i] = 0;
-}
+//   /* Zero-terminate string */
+//   str[i] = 0;
+// }
 
 
 void bignum_dec(struct bn* n)
 {
-  require(n, "n is null");
+  // require(n, "n is null");
 
   DTYPE tmp; /* copy of n */
   DTYPE res;
@@ -159,7 +159,7 @@ void bignum_dec(struct bn* n)
 
 void bignum_inc(struct bn* n)
 {
-  require(n, "n is null");
+  // require(n, "n is null");
 
   DTYPE res;
   DTYPE_TMP tmp; /* copy of n */
@@ -181,9 +181,9 @@ void bignum_inc(struct bn* n)
 
 void bignum_add(struct bn* a, struct bn* b, struct bn* c)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   DTYPE_TMP tmp;
   int carry = 0;
@@ -199,9 +199,9 @@ void bignum_add(struct bn* a, struct bn* b, struct bn* c)
 
 void bignum_sub(struct bn* a, struct bn* b, struct bn* c)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   DTYPE_TMP res;
   DTYPE_TMP tmp1;
@@ -230,9 +230,9 @@ void bignum_sub_imm(struct bn* a, uint64_t b) {
 
 void bignum_mul(struct bn* a, struct bn* b, struct bn* c)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   struct bn row;
   struct bn tmp;
@@ -262,9 +262,9 @@ void bignum_mul(struct bn* a, struct bn* b, struct bn* c)
 
 void bignum_div(struct bn* a, struct bn* b, struct bn* c)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   struct bn current;
   struct bn denom;
@@ -308,9 +308,9 @@ void bignum_div(struct bn* a, struct bn* b, struct bn* c)
 
 void bignum_lshift(struct bn* a, struct bn* b, int nbits)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(nbits >= 0, "no negative shifts");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(nbits >= 0, "no negative shifts");
 
   bignum_assign(b, a);
   /* Handle shift in multiples of word-size */
@@ -336,9 +336,9 @@ void bignum_lshift(struct bn* a, struct bn* b, int nbits)
 
 void bignum_rshift(struct bn* a, struct bn* b, int nbits)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(nbits >= 0, "no negative shifts");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(nbits >= 0, "no negative shifts");
   
   bignum_assign(b, a);
   /* Handle shift in multiples of word-size */
@@ -368,9 +368,9 @@ void bignum_mod(struct bn* a, struct bn* b, struct bn* c)
   /*
     Take divmod and throw away div part
   */
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   struct bn tmp;
 
@@ -388,9 +388,9 @@ void bignum_divmod(struct bn* a, struct bn* b, struct bn* c, struct bn* d)
     example:
       mod(8, 3) = 8 - ((8 / 3) * 3) = 2
   */
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   struct bn tmp;
 
@@ -407,9 +407,9 @@ void bignum_divmod(struct bn* a, struct bn* b, struct bn* c, struct bn* d)
 
 void bignum_and(struct bn* a, struct bn* b, struct bn* c)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
@@ -421,9 +421,9 @@ void bignum_and(struct bn* a, struct bn* b, struct bn* c)
 
 void bignum_or(struct bn* a, struct bn* b, struct bn* c)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
@@ -435,9 +435,9 @@ void bignum_or(struct bn* a, struct bn* b, struct bn* c)
 
 void bignum_xor(struct bn* a, struct bn* b, struct bn* c)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
@@ -449,8 +449,8 @@ void bignum_xor(struct bn* a, struct bn* b, struct bn* c)
 
 int bignum_cmp(struct bn* a, struct bn* b)
 {
-  require(a, "a is null");
-  require(b, "b is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
 
   int i = BN_ARRAY_SIZE;
   do
@@ -473,7 +473,7 @@ int bignum_cmp(struct bn* a, struct bn* b)
 
 int bignum_is_zero(struct bn* n)
 {
-  require(n, "n is null");
+  // require(n, "n is null");
 
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
@@ -490,9 +490,9 @@ int bignum_is_zero(struct bn* n)
 
 void bignum_pow(struct bn* a, struct bn* b, struct bn* c)
 {
-  require(a, "a is null");
-  require(b, "b is null");
-  require(c, "c is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
+  // require(c, "c is null");
 
   struct bn tmp;
 
@@ -532,8 +532,8 @@ void bignum_pow(struct bn* a, struct bn* b, struct bn* c)
 
 void bignum_isqrt(struct bn *a, struct bn* b)
 {
-  require(a, "a is null");
-  require(b, "b is null");
+  // require(a, "a is null");
+  // require(b, "b is null");
 
   struct bn low, high, mid, tmp;
 
@@ -565,8 +565,8 @@ void bignum_isqrt(struct bn *a, struct bn* b)
 
 void bignum_assign(struct bn* dst, struct bn* src)
 {
-  require(dst, "dst is null");
-  require(src, "src is null");
+  // require(dst, "dst is null");
+  // require(src, "src is null");
 
   int i;
   for (i = 0; i < BN_ARRAY_SIZE; ++i)
@@ -580,8 +580,8 @@ void bignum_assign(struct bn* dst, struct bn* src)
 static void _rshift_word(struct bn* a, int nwords)
 {
   /* Naive method: */
-  require(a, "a is null");
-  require(nwords >= 0, "no negative shifts");
+  // require(a, "a is null");
+  // require(nwords >= 0, "no negative shifts");
 
   int i;
   if (nwords >= BN_ARRAY_SIZE)
@@ -606,8 +606,8 @@ static void _rshift_word(struct bn* a, int nwords)
 
 static void _lshift_word(struct bn* a, int nwords)
 {
-  require(a, "a is null");
-  require(nwords >= 0, "no negative shifts");
+  // require(a, "a is null");
+  // require(nwords >= 0, "no negative shifts");
 
   int i;
   /* Shift whole words */
@@ -625,7 +625,7 @@ static void _lshift_word(struct bn* a, int nwords)
 
 static void _lshift_one_bit(struct bn* a)
 {
-  require(a, "a is null");
+  // require(a, "a is null");
 
   int i;
   for (i = (BN_ARRAY_SIZE - 1); i > 0; --i)
@@ -638,7 +638,7 @@ static void _lshift_one_bit(struct bn* a)
 
 static void _rshift_one_bit(struct bn* a)
 {
-  require(a, "a is null");
+  // require(a, "a is null");
 
   int i;
   for (i = 0; i < (BN_ARRAY_SIZE - 1); ++i)

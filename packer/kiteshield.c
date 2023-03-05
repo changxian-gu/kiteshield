@@ -13,6 +13,7 @@
 //#include "bddisasm.h"
 
 #include "common/include/rc4.h"
+#include "common/include/rsa.h"
 #include "common/include/obfuscation.h"
 #include "common/include/defs.h"
 #include "packer/include/elfutils.h"
@@ -481,6 +482,7 @@ static int apply_outer_encryption(
         size_t loader_size) {
     
     struct des_key key;
+    struct rsa_key key1;
     CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
     // for (int i = 0; i < 8; i++)
     //     key.bytes[i] = 0;

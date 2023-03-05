@@ -1,6 +1,5 @@
 // #include "../loader/include/string.h"
-#include "./include/bn.h"
-#include "../loader/include/string.h"
+#include "include/rsa.h"
 
 void my_reverse(void *src, unsigned long start, unsigned long end)
 {
@@ -16,7 +15,7 @@ void my_reverse(void *src, unsigned long start, unsigned long end)
   }
 }
 
-// bignum底层存储使用的uint32 小端序存储
+// bignum 底层使用的小端序存储
 void rsa_memcpy(void *dest, void *src, unsigned long len)
 {
   // my_reverse(src, 0, len);
@@ -31,12 +30,6 @@ void rsa_memcpy(void *dest, void *src, unsigned long len)
   }
 }
 
-typedef struct rsa_key
-{
-  char n[128];
-  char d[128];
-  char e[128];
-} rsa_key;
 /* O(log n) */
 void pow_mod_faster(struct bn *a, struct bn *b, struct bn *n, struct bn *res)
 {
@@ -65,11 +58,10 @@ void pow_mod_faster(struct bn *a, struct bn *b, struct bn *n, struct bn *res)
     bignum_mod(&tmp, n, &tmpa);
   }
 }
-
-void rsa_encrypt(unsigned char *msg, unsigned long len, rsa_key *key, char *ciphertext)
+void rsa_encrypt(unsigned char *msg, char *ciphertext, unsigned long len, rsa_key *key)
 {
   // 在把char数组赋值到bignum需要使用rsa_memcpy函数
-  char print_buf[8192];
+  // char print_buf[8192];
   bignum bn_msg;
   bignum_init(&bn_msg);
   rsa_memcpy(bn_msg.array, msg, len);
@@ -97,9 +89,9 @@ void rsa_encrypt(unsigned char *msg, unsigned long len, rsa_key *key, char *ciph
   rsa_memcpy(ciphertext, bn_c.array, 128);
 }
 
-void rsa_decrypt(char *ciphertext, unsigned long len, rsa_key *key, char *msg)
+void rsa_decrypt(char *ciphertext, char *msg, unsigned long len, rsa_key *key)
 {
-  char print_buf[8192];
+  // char print_buf[8192];
   bignum bn_c;
   bignum_init(&bn_c);
   rsa_memcpy(bn_c.array, ciphertext, len);
@@ -124,7 +116,7 @@ void rsa_decrypt(char *ciphertext, unsigned long len, rsa_key *key, char *msg)
   // printf("after dec, msg is : 0x%s\n", print_buf);
 }
 
-int rsa_init(rsa_key* key)
+void rsa_init(rsa_key* key)
 {
   memset(key->n, 0, 128);
   memset(key->d, 0, 128);
