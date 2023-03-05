@@ -255,6 +255,7 @@ static void replace_auxv_ent(unsigned long long *auxv_start,
               value);
 }
 
+// 设置辅助数组的值
 static void setup_auxv(
         void *argv_start,
         void *entry,
@@ -322,8 +323,6 @@ void loader_outer_key_deobfuscate(
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
     ks_malloc_init();
-    // while (1)
-    //     ;
     if (antidebug_proc_check_traced())
         DIE(TRACED_MSG);
 
@@ -362,7 +361,7 @@ void *load(void *entry_stacktop) {
     // for (int i = 0; i < 7; i++)
     //     actual_key.bytes[i] = 0;
 
-    // 修改解密后的大小（arg2）,成功
+    // 解密并修改解密后的大小（arg2）
     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
                        &(packed_bin_phdr->p_memsz),
                        &actual_key);
@@ -392,6 +391,5 @@ void *load(void *entry_stacktop) {
     void *initial_entry = interp_entry == NULL ? program_entry : interp_entry;
     DEBUG_FMT("control will be passed to packed app at %p", initial_entry);
     // 如果我们的elf是静态链接的，就直接返回entry，否则会交给动态链接器处理
-    ks_malloc_deinit();
     return initial_entry;
 }

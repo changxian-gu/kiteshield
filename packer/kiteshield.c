@@ -537,7 +537,7 @@ static int full_strip(struct mapped_elf *elf) {
     size_t new_size = 0;
     info("stripping input binary");
 
-    /* Calculate minimum size needed to contain all program headers 应该是segment？ */
+    /* Calculate minimum size needed to contain all program headers */
     for (int i = 0; i < elf->ehdr->e_phnum; i++) {
         size_t seg_end = curr_phdr->p_offset + curr_phdr->p_filesz;
         if (seg_end > new_size)

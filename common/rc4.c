@@ -31,4 +31,3 @@ unsigned char rc4_get_byte(struct rc4_state *rc4)
 
   return rc4->S[(rc4->S[rc4->i] + rc4->S[rc4->j]) % 256];
 }
-
