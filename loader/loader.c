@@ -291,7 +291,8 @@ static void decrypt_packed_bin(
 
     char* out = (char*)ks_malloc((*packed_bin_size)*sizeof(char));
     DEBUG_FMT("the val : %d\n", *(char*)out);
-    des_decrypt(packed_bin_start, out, packed_bin_size, key->bytes);
+    unsigned long t = *packed_bin_size - *packed_bin_size % 8;
+    des_decrypt(packed_bin_start, out, &t, key->bytes);
     DEBUG_FMT("the val : %d\n", *((char*)out));
     memcpy(packed_bin_start, out, *packed_bin_size);
     DEBUG_FMT("decrypt success %d", 1);

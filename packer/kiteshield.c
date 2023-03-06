@@ -219,7 +219,9 @@ static void encrypt_memory_range(struct des_key *key, void *start, size_t* len) 
     printf("before enc, len : %lu\n", *len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
-    des_encrypt(start, out, len, key->bytes);
+    unsigned long t = *len - *len % 8;
+    des_encrypt(start, out, &t, key->bytes);
+    // rsa_encrypt(start, out, *len, key);
     printf("after enc, len : %lu\n", *len);
     memcpy(start, out, *len);
 }
@@ -482,10 +484,10 @@ static int apply_outer_encryption(
         size_t loader_size) {
     
     struct des_key key;
-    struct rsa_key key1;
+    // struct rsa_key key1;
     CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
-    // for (int i = 0; i < 8; i++)
-    //     key.bytes[i] = 0;
+    // rsa_init(&key1);
+
     info("applying outer encryption with key %s", STRINGIFY_KEY(key));
 
     /* Encrypt the actual binary */

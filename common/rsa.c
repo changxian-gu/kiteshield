@@ -59,19 +59,29 @@ void pow_mod_faster(struct bn *a, struct bn *b, struct bn *n, struct bn *res)
   }
 }
 void rsa_encrypt(unsigned char *msg, char *ciphertext, unsigned long len, rsa_key *key)
-{
-  // 在把char数组赋值到bignum需要使用rsa_memcpy函数
-  // char print_buf[8192];
+{ 
+  int count_128 = len / 128;
   bignum bn_msg;
-  bignum_init(&bn_msg);
-  rsa_memcpy(bn_msg.array, msg, len);
-  // bignum_to_string(&bn_msg, print_buf, 8192);
-  // printf("msg is : 0x%s\n", print_buf);
-
   bignum bn_n, bn_e, bn_c;
   bignum_init(&bn_n);
   bignum_init(&bn_e);
+  bignum_init(&bn_e);
   rsa_memcpy(bn_n.array, key->n, 128);
+  rsa_memcpy(bn_e.array, key->e, 3);
+  int idx = 0;
+  while (idx < count_128) {
+    bignum_init(&bn_msg);
+    rsa_memcpy(bn_msg.array, msg + idx * 128, 128);
+    pow_mod_faster(&bn_msg, &bn_e, &bn_n, &bn_c);
+    rsa_memcpy(ciphertext + idx * 128, bn_c.array, 128);
+    bignum_init(&bn_c);
+    idx++;
+  }
+  // 在把char数组赋值到bignum需要使用rsa_memcpy函数
+  // char print_buf[8192];
+  // bignum_to_string(&bn_msg, print_buf, 8192);
+  // printf("msg is : 0x%s\n", print_buf);
+
   // printf("the key.n bytes are :\n");
   // print_bytes(key->n, 128);
   // printf("the bn_n array bytes are :\n");
@@ -80,38 +90,41 @@ void rsa_encrypt(unsigned char *msg, char *ciphertext, unsigned long len, rsa_ke
   // printf("n is : 0x%s\n", print_buf);
 
 
-  rsa_memcpy(bn_e.array, key->e, 3);
   // bignum_to_string(&bn_e, print_buf, 8192);
   // printf("e is : 0x%s\n", print_buf);
-  pow_mod_faster(&bn_msg, &bn_e, &bn_n, &bn_c);
   // bignum_to_string(&bn_c, print_buf, 8192);
   // printf("c is : 0x%s\n", print_buf);
-  rsa_memcpy(ciphertext, bn_c.array, 128);
 }
 
 void rsa_decrypt(char *ciphertext, char *msg, unsigned long len, rsa_key *key)
 {
-  // char print_buf[8192];
+  int idx = 0;
+  int count_128 = len / 128;
   bignum bn_c;
+  bignum bn_m;
+  bignum bn_n, bn_d;
   bignum_init(&bn_c);
-  rsa_memcpy(bn_c.array, ciphertext, len);
+  bignum_init(&bn_n);
+  bignum_init(&bn_d);
+  rsa_memcpy(bn_n.array, key->n, 128);
+  rsa_memcpy(bn_d.array, key->d, 128);
+  
+  while (idx < count_128) {
+    bignum_init(&bn_m);
+    rsa_memcpy(bn_c.array, ciphertext + idx * 128, 128);
+    pow_mod_faster(&bn_c, &bn_d, &bn_n, &bn_m);
+    rsa_memcpy(msg + idx * 128, bn_m.array, 128);
+    idx++;
+  }
+  // char print_buf[8192];
   // bignum_to_string(&bn_c, print_buf, 8192);
   // printf("the ciphertext is : %s\n", print_buf);
 
-  bignum bn_m;
-  bignum bn_n, bn_d;
-  bignum_init(&bn_n);
-  bignum_init(&bn_d);
-  bignum_init(&bn_m);
-  rsa_memcpy(bn_n.array, key->n, 128);
   // bignum_to_string(&bn_n, print_buf, 8192);
   // printf("the n is : 0x%s\n", print_buf);
-  rsa_memcpy(bn_d.array, key->d, 128);
   // bignum_to_string(&bn_d, print_buf, 8192);
   // printf("the d is : 0x%s\n", print_buf);
-  pow_mod_faster(&bn_c, &bn_d, &bn_n, &bn_m);
 
-  rsa_memcpy(msg, bn_m.array, 128);
   // bignum_to_string(&bn_m, print_buf, 8192);
   // printf("after dec, msg is : 0x%s\n", print_buf);
 }
