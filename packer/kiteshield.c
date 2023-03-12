@@ -127,7 +127,7 @@ static int produce_output_elf(
     Elf64_Addr entry_vaddr = LOADER_ADDR +
                              sizeof(Elf64_Ehdr) +
                              (sizeof(Elf64_Phdr) * 2) +
-                             sizeof(struct des_key);
+                             sizeof(rsa_key);
     Elf64_Ehdr ehdr;
     ehdr.e_ident[EI_MAG0] = ELFMAG0;
     ehdr.e_ident[EI_MAG1] = ELFMAG1;
@@ -214,14 +214,15 @@ static int get_random_bytes(void *buf, size_t len) {
     return 0;
 }
 
-static void encrypt_memory_range(struct des_key *key, void *start, size_t* len) {
+static void encrypt_memory_range(struct rsa_key* key, void *start, size_t* len) {
     unsigned char* out = (unsigned char*)malloc((*len + 8)*sizeof(char));
     printf("before enc, len : %lu\n", *len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
-    unsigned long t = *len - *len % 8;
-    des_encrypt(start, out, &t, key->bytes);
-    // rsa_encrypt(start, out, *len, key);
+    // unsigned long t = *len - *len % 8;
+    // des_encrypt(start, out, &t, key->bytes);
+    unsigned long t = *len - *len % 64;
+    rsa_encrypt(start, out, t, key);
     printf("after enc, len : %lu\n", *len);
     memcpy(start, out, *len);
 }
@@ -483,24 +484,25 @@ static int apply_outer_encryption(
         void *loader_start,
         size_t loader_size) {
     
-    struct des_key key;
-    // struct rsa_key key1;
-    CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
-    // rsa_init(&key1);
+    // struct des_key key;
+    struct rsa_key key;
+    // CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+    rsa_init(&key);
 
-    info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+    // info("applying outer encryption with key %s", STRINGIFY_KEY(key));
 
     /* Encrypt the actual binary */
     // 修改elf长度
     encrypt_memory_range(&key, elf->start, &(elf->size));
 
     /* Obfuscate Key */
-    struct des_key obfuscated_key;
-    obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
-    info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
+    // struct des_key obfuscated_key;
+    // obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
+    // info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
 
     /* Copy over obfuscated key so the loader can decrypt */
-    *((struct des_key *) loader_start) = obfuscated_key;
+    // *((struct des_key *) loader_start) = obfuscated_key;
+    *((struct rsa_key*) loader_start) = key;
 
     return 0;
 }

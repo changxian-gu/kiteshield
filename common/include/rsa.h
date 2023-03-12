@@ -12,11 +12,11 @@ typedef struct rsa_key
   char n[128];
   char d[128];
   char e[128];
-} rsa_key;
+}__attribute__((packed)) rsa_key;
 /* O(log n) */
 void pow_mod_faster(struct bn *a, struct bn *b, struct bn *n, struct bn *res);
-void rsa_encrypt(unsigned char *msg, char *ciphertext, unsigned long len, rsa_key *key);
-void rsa_decrypt(char *ciphertext, char *msg, unsigned long len, rsa_key *key);
+void rsa_encrypt(unsigned char *msg, unsigned char *ciphertext, unsigned long len, rsa_key *key);
+void rsa_decrypt(unsigned char *ciphertext, unsigned char *msg, unsigned long len, rsa_key *key);
 void rsa_init(rsa_key* key);
 
 #endif
