@@ -21,7 +21,6 @@ There may well be room for performance-optimizations and improvements.
 */
 
 #include <stdint.h>
-#include <assert.h>
 
 /* This macro defines the word size in bytes of the array that constitues the big-number data structure. */
 #ifndef WORD_SIZE
