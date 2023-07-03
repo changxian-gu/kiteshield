@@ -1,6 +1,7 @@
 # CFLAGS_COMMON = -Wall -std=gnu99 -fno-pie -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -c -I ..
-CFLAGS_COMMON = -std=gnu99 -fno-pie -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -c -I ..
-LDFLAGS = -no-pie
+CFLAGS_COMMON = -std=gnu99 -fno-pie -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -c -I .. -I../cyclone_cipher -I../cyclone_cipher/common
+LDFLAGS = -no-pie 
+LIB = -L../cyclone_cipher -lcrypto
 
 CFLAGS = $(CFLAGS_COMMON)
 
@@ -25,12 +26,12 @@ tests:
 	$(MAKE) -C test
 
 out/loader_header_rt.h: $(OBJS_RT)
-	$(LD) $(LDFLAGS) $(OBJS_RT) -T link.lds -o out/rt/loader-elf
+	$(LD) $(LDFLAGS) $(OBJS_RT) $(LIB) -T link.lds -o out/rt/loader-elf
 	objcopy -O binary out/rt/loader-elf out/rt/loader.bin
 	cat out/rt/loader.bin | python3 bin_to_header.py GENERATED_LOADER_RT > out/generated_loader_rt.h
 
 out/loader_header_no_rt.h: $(OBJS_NO_RT)
-	$(LD) $(LDFLAGS) $(OBJS_NO_RT) -T link.lds -o out/no_rt/loader-elf
+	$(LD) $(LDFLAGS) $(OBJS_NO_RT) $(LIB) -T link.lds -o out/no_rt/loader-elf
 	objcopy -O binary out/no_rt/loader-elf out/no_rt/loader.bin
 	cat out/no_rt/loader.bin | python3 bin_to_header.py GENERATED_LOADER_NO_RT > out/generated_loader_no_rt.h
 
