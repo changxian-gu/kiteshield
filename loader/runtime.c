@@ -5,7 +5,10 @@
 #include "common/include/defs.h"
 #include "common/include/obfuscation.h"
 #include "common/include/rc4.h"
-#include "common/include/des.h"
+// #include "common/include/des3.h"
+#include "cipher/des3.h"
+#include "cipher_modes/ecb.h"
+
 
 #include "loader/include/anti_debug.h"
 #include "loader/include/debug.h"
@@ -175,7 +178,7 @@ void print_hex(unsigned char* buf, int len) {
     ks_printf(1, "\n");
 }
 
-static void des_decrypt_fcn(pid_t tid, struct function *fcn) {
+static void des3_decrypt_fcn(pid_t tid, struct function *fcn) {
     int align = 8;
     unsigned long size = fcn->len - fcn->len % align;
     size_t remaining = size;
@@ -187,12 +190,15 @@ static void des_decrypt_fcn(pid_t tid, struct function *fcn) {
         long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) curr_addr, &word);
         DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
         
-        memcpy(in + size - remaining, &word, 8);
-        remaining -= 8;
-        curr_addr += 8;
+        memcpy(in + size - remaining, &word, sizeof(long));
+        remaining -= sizeof(long);
+        curr_addr += sizeof(long);
     }
     // print_hex(in, size);
-    des_decrypt((unsigned char*)in, out, &size, fcn->key.bytes);
+    Des3Context des3_context;
+    des3Init(&des3_context, fcn->key.bytes, 8);
+    ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, in, out, size);
+    // des3_decrypt((unsigned char*)in, out, &size, fcn->key.bytes);
     // print_hex(out, size);
     remaining = size;
     curr_addr = (uint8_t *)fcn->start_addr;
@@ -200,14 +206,14 @@ static void des_decrypt_fcn(pid_t tid, struct function *fcn) {
         long word = *((long *)(out + size - remaining));
         long res = sys_ptrace(PTRACE_POKETEXT, tid, curr_addr, (void *)word);
         DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
-        remaining -= 8;
-        curr_addr += 8;
+        remaining -= sizeof(long);
+        curr_addr += sizeof(long);
     }
     ks_free(in);
     ks_free(out);
 }
 
-static void des_encrypt_fcn(pid_t tid, struct function *fcn) {
+static void des3_encrypt_fcn(pid_t tid, struct function *fcn) {
     int align = 8;
     unsigned long size = fcn->len - fcn->len % align;
     size_t remaining = size;
@@ -219,12 +225,16 @@ static void des_encrypt_fcn(pid_t tid, struct function *fcn) {
         long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) curr_addr, &word);
         DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
         
-        memcpy(in + size - remaining, &word, 8);
-        remaining -= 8;
-        curr_addr += 8;
+        memcpy(in + size - remaining, &word, sizeof(long));
+        remaining -= sizeof(long);
+        curr_addr += sizeof(long);
     }
     // print_hex(in, size);
-    des_encrypt((unsigned char*)in, out, &size, fcn->key.bytes);
+    Des3Context des3_context;
+    des3Init(&des3_context, fcn->key.bytes, 8);
+    ecbEncrypt(DES3_CIPHER_ALGO, &des3_context, in, out, size);
+
+    // des3_encrypt((unsigned char*)in, out, &size, fcn->key.bytes);
     // print_hex(out, size);
     remaining = size;
     curr_addr = (uint8_t *)fcn->start_addr;
@@ -232,39 +242,13 @@ static void des_encrypt_fcn(pid_t tid, struct function *fcn) {
         long word = *((long *)(out + size - remaining));
         long res = sys_ptrace(PTRACE_POKETEXT, tid, curr_addr, (void *)word);
         DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
-        remaining -= 8;
-        curr_addr += 8;
+        remaining -= sizeof(long);
+        curr_addr += sizeof(long);
     }
     ks_free(in);
     ks_free(out);
 }
 
-static void rc4_xor_fcn(pid_t tid, struct function *fcn) {
-    struct rc4_state rc4;
-    rc4_init(&rc4, fcn->key.bytes, sizeof(fcn->key.bytes));
-
-    uint8_t *curr_addr = (uint8_t *) fcn->start_addr;
-    size_t remaining = fcn->len;
-    while (remaining > 0) {
-        long word;
-        long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) curr_addr, &word);
-        DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
-
-        int to_write = remaining > 8 ? 8 : remaining;
-        for (int i = 0; i < to_write; i++) {
-            word ^= ((long) rc4_get_byte(&rc4)) << (i * 8);
-        }
-
-        res = sys_ptrace(PTRACE_POKETEXT, tid, curr_addr, (void *) word);
-        DIE_IF_FMT(res < 0, "PTRACE_POKETEXT failed with error %d", res);
-
-        res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) curr_addr, &word);
-        DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
-
-        curr_addr += to_write;
-        remaining -= to_write;
-    }
-}
 
 /* Pulls the third field out of /proc/<pid>/stat, which is a single character
  * representing process state Running, Sleeping, Zombie, etc. */
@@ -351,7 +335,7 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
         DEBUG_FMT("tid %d: entering encrypted function %s decrypting with key %s",
                   thread->tid, fcn->name, STRINGIFY_KEY(&fcn->key));
         set_byte_at_addr(thread->tid, tp->addr, tp->value);
-        des_decrypt_fcn(thread->tid, fcn);
+        des3_decrypt_fcn(thread->tid, fcn);
     } else {
         /* This thread hit the trap point for entrance to this function, but an
          * earlier thread decrypted it.
@@ -400,7 +384,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                       thread->tid, prev_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, tp->plain_value);
-            des_encrypt_fcn(thread->tid, prev_fcn);
+            des3_encrypt_fcn(thread->tid, prev_fcn);
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, INT3);
         }
 
@@ -423,7 +407,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                           thread->tid, new_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
                 set_byte_at_addr(thread->tid, prev_fcn->start_addr, tp->plain_value);
-                des_encrypt_fcn(thread->tid, new_fcn);
+                des3_encrypt_fcn(thread->tid, new_fcn);
                 set_byte_at_addr(thread->tid, new_fcn->start_addr, INT3);
             }
 
@@ -443,7 +427,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
          * executing in it */
         if (FCN_REFCNT(thread, prev_fcn) == 0) {
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, tp->plain_value);
-            des_encrypt_fcn(thread->tid, prev_fcn);
+            des3_encrypt_fcn(thread->tid, prev_fcn);
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, INT3);
         }
     } else {
@@ -537,7 +521,7 @@ void destroy_thread(struct thread_list *list, struct thread *thread) {
         while (curr_bt) {
             FCN_DEC_REF(thread, curr_bt->fcn);
             if (FCN_REFCNT(thread, curr_bt->fcn) == 0) {
-                des_decrypt_fcn(thread->tid, curr_bt->fcn);
+                des3_decrypt_fcn(thread->tid, curr_bt->fcn);
                 set_byte_at_addr(thread->tid, curr_bt->fcn->start_addr, INT3);
             }
             curr_bt = curr_bt->next;

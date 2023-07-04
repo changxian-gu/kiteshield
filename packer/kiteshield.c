@@ -17,7 +17,7 @@
 #include "common/include/defs.h"
 #include "packer/include/elfutils.h"
 // #include "common/include/des.h"
-#include "cipher/des.h"
+#include "cipher/des3.h"
 #include "cipher_modes/ecb.h"
 
 #include "loader/out/generated_loader_rt.h"
@@ -221,9 +221,9 @@ static void encrypt_memory_range(struct des_key *key, void *start, size_t* len) 
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
     unsigned long t = *len - *len % 8;
-    DesContext des_context;
-    desInit(&des_context, key->bytes, 8);
-    ecbEncrypt(&desCipherAlgo, &des_context, start, out, t);
+    Des3Context des3_context;
+    des3Init(&des3_context, key->bytes, 8);
+    ecbEncrypt(DES3_CIPHER_ALGO, &des3_context, start, out, t);
     memcpy(start, out, *len);
 }
 

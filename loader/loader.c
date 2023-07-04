@@ -2,7 +2,7 @@
 
 #include "common/include/defs.h"
 #include "common/include/rc4.h"
-#include "cipher/des.h"
+#include "cipher/des3.h"
 #include "cipher_modes/ecb.h"
 #include "common/include/obfuscation.h"
 
@@ -293,9 +293,9 @@ static void decrypt_packed_bin(
     char* out = (char*)ks_malloc((*packed_bin_size)*sizeof(char));
     DEBUG_FMT("the val : %d\n", *(char*)out);
     unsigned long t = *packed_bin_size - *packed_bin_size % 8;
-    DesContext des_context;
-    desInit(&des_context, key->bytes, 8);
-    ecbDecrypt(DES_CIPHER_ALGO, &des_context, packed_bin_start, out, t);
+    Des3Context des3_context;
+    des3Init(&des3_context, key->bytes, 8);
+    ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
     DEBUG_FMT("the val : %d\n", *((char*)out));
     memcpy(packed_bin_start, out, *packed_bin_size);
     DEBUG_FMT("decrypt success %d", 1);
