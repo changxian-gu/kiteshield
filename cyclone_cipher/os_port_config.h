@@ -29,7 +29,6 @@
 #ifndef _OS_PORT_CONFIG_H
 #define _OS_PORT_CONFIG_H
 typedef unsigned long size_t;
-#define NULL 0
 
 int myosTolower(int c);
 int myosToupper(int c);

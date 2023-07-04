@@ -1,12 +1,11 @@
 #define USE_RUNTIME
 #ifdef USE_RUNTIME
 
-
 #include "common/include/defs.h"
 #include "common/include/obfuscation.h"
 #include "common/include/rc4.h"
 // #include "common/include/des3.h"
-#include "cipher/des3.h"
+#include "cipher/aes.h"
 #include "cipher_modes/ecb.h"
 
 
@@ -178,9 +177,9 @@ void print_hex(unsigned char* buf, int len) {
     ks_printf(1, "\n");
 }
 
-static void des3_decrypt_fcn(pid_t tid, struct function *fcn) {
-    int align = 8;
-    unsigned long size = fcn->len - fcn->len % align;
+static void aes_decrypt_fcn(pid_t tid, struct function *fcn) {
+    int key_len = sizeof(fcn->key);
+    unsigned long size = fcn->len - fcn->len % key_len;
     size_t remaining = size;
     char* in = (char *)ks_malloc(remaining * sizeof(char));
     char* out = (char *)ks_malloc(remaining * sizeof(char));
@@ -195,10 +194,10 @@ static void des3_decrypt_fcn(pid_t tid, struct function *fcn) {
         curr_addr += sizeof(long);
     }
     // print_hex(in, size);
-    Des3Context des3_context;
-    des3Init(&des3_context, fcn->key.bytes, 8);
-    ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, in, out, size);
-    // des3_decrypt((unsigned char*)in, out, &size, fcn->key.bytes);
+    AesContext aes_context;
+    aesInit(&aes_context, fcn->key.bytes, key_len);
+    ecbDecrypt(AES_CIPHER_ALGO, &aes_context, in, out, size);
+    // aes_decrypt((unsigned char*)in, out, &size, fcn->key.bytes);
     // print_hex(out, size);
     remaining = size;
     curr_addr = (uint8_t *)fcn->start_addr;
@@ -213,9 +212,9 @@ static void des3_decrypt_fcn(pid_t tid, struct function *fcn) {
     ks_free(out);
 }
 
-static void des3_encrypt_fcn(pid_t tid, struct function *fcn) {
-    int align = 8;
-    unsigned long size = fcn->len - fcn->len % align;
+static void aes_encrypt_fcn(pid_t tid, struct function *fcn) {
+    int key_len = sizeof(fcn->key);
+    unsigned long size = fcn->len - fcn->len % key_len;
     size_t remaining = size;
     char* in = (char *)ks_malloc(remaining * sizeof(char));
     char* out = (char *)ks_malloc(remaining * sizeof(char));
@@ -230,11 +229,11 @@ static void des3_encrypt_fcn(pid_t tid, struct function *fcn) {
         curr_addr += sizeof(long);
     }
     // print_hex(in, size);
-    Des3Context des3_context;
-    des3Init(&des3_context, fcn->key.bytes, 8);
-    ecbEncrypt(DES3_CIPHER_ALGO, &des3_context, in, out, size);
+    AesContext aes_context;
+    aesInit(&aes_context, fcn->key.bytes, key_len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, in, out, size);
 
-    // des3_encrypt((unsigned char*)in, out, &size, fcn->key.bytes);
+    // aes_encrypt((unsigned char*)in, out, &size, fcn->key.bytes);
     // print_hex(out, size);
     remaining = size;
     curr_addr = (uint8_t *)fcn->start_addr;
@@ -329,13 +328,13 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
     DIE_IF(antidebug_proc_check_traced(), TRACED_MSG);
     struct function *fcn = FCN_FROM_TP(tp);
     DEBUG_FMT("the func len : %d", fcn->len);
-    DEBUG_FMT("the func len encypted : %d", fcn->len - fcn->len % 8);
+    DEBUG_FMT("the func len encypted : %d", fcn->len - fcn->len % sizeof(fcn->key));
 
     if (FCN_REFCNT(thread, fcn) == 0) {
         DEBUG_FMT("tid %d: entering encrypted function %s decrypting with key %s",
                   thread->tid, fcn->name, STRINGIFY_KEY(&fcn->key));
         set_byte_at_addr(thread->tid, tp->addr, tp->value);
-        des3_decrypt_fcn(thread->tid, fcn);
+        aes_decrypt_fcn(thread->tid, fcn);
     } else {
         /* This thread hit the trap point for entrance to this function, but an
          * earlier thread decrypted it.
@@ -384,7 +383,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                       thread->tid, prev_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, tp->plain_value);
-            des3_encrypt_fcn(thread->tid, prev_fcn);
+            aes_encrypt_fcn(thread->tid, prev_fcn);
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, INT3);
         }
 
@@ -407,7 +406,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                           thread->tid, new_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
                 set_byte_at_addr(thread->tid, prev_fcn->start_addr, tp->plain_value);
-                des3_encrypt_fcn(thread->tid, new_fcn);
+                aes_encrypt_fcn(thread->tid, new_fcn);
                 set_byte_at_addr(thread->tid, new_fcn->start_addr, INT3);
             }
 
@@ -427,7 +426,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
          * executing in it */
         if (FCN_REFCNT(thread, prev_fcn) == 0) {
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, tp->plain_value);
-            des3_encrypt_fcn(thread->tid, prev_fcn);
+            aes_encrypt_fcn(thread->tid, prev_fcn);
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, INT3);
         }
     } else {
@@ -521,7 +520,7 @@ void destroy_thread(struct thread_list *list, struct thread *thread) {
         while (curr_bt) {
             FCN_DEC_REF(thread, curr_bt->fcn);
             if (FCN_REFCNT(thread, curr_bt->fcn) == 0) {
-                des3_decrypt_fcn(thread->tid, curr_bt->fcn);
+                aes_decrypt_fcn(thread->tid, curr_bt->fcn);
                 set_byte_at_addr(thread->tid, curr_bt->fcn->start_addr, INT3);
             }
             curr_bt = curr_bt->next;
@@ -845,7 +844,7 @@ static void handle_thread_exit(struct thread *thread,
         pid_t res = sys_wait4(tgid, &wstatus, __WALL);
         DIE_IF_FMT(res < 0, "wait4 syscall failed with error %d", res);
 
-        DIE_IF_FMT(!WIFEXITED(wstatus), "tid %d expected to exit but did not",
+        DIE_IF_FMT(!WIFEXITED(wstatus), "tid %d expected to exit but did not (last thread)",
                    tgid);
         DEBUG_FMT("tid %d: exited with status %d", tgid, WEXITSTATUS(wstatus));
     }

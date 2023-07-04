@@ -2,7 +2,7 @@
 
 #include "common/include/defs.h"
 #include "common/include/rc4.h"
-#include "cipher/des3.h"
+#include "cipher/aes.h"
 #include "cipher_modes/ecb.h"
 #include "common/include/obfuscation.h"
 
@@ -40,7 +40,7 @@
 // }
 
 
-struct des_key obfuscated_key __attribute__((section(".key")));
+struct aes_key obfuscated_key __attribute__((section(".key")));
 
 static void *map_load_section_from_mem(void *elf_start, Elf64_Phdr phdr) {
     uint64_t base_addr = ((Elf64_Ehdr *) elf_start)->e_type == ET_DYN ?
@@ -282,7 +282,7 @@ static void setup_auxv(
 static void decrypt_packed_bin(
         void *packed_bin_start,
         size_t *packed_bin_size,
-        struct des_key *key) {
+        struct aes_key *key) {
 
     DEBUG_FMT("DES decrypting binary with key %s", STRINGIFY_KEY(key));
     DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
@@ -293,9 +293,9 @@ static void decrypt_packed_bin(
     char* out = (char*)ks_malloc((*packed_bin_size)*sizeof(char));
     DEBUG_FMT("the val : %d\n", *(char*)out);
     unsigned long t = *packed_bin_size - *packed_bin_size % 8;
-    Des3Context des3_context;
-    des3Init(&des3_context, key->bytes, 8);
-    ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
+    AesContext aes_context;
+    aesInit(&aes_context, key->bytes, sizeof(struct aes_key));
+    ecbDecrypt(AES_CIPHER_ALGO, &aes_context, packed_bin_start, out, t);
     DEBUG_FMT("the val : %d\n", *((char*)out));
     memcpy(packed_bin_start, out, *packed_bin_size);
     DEBUG_FMT("decrypt success %d", 1);
@@ -305,8 +305,8 @@ static void decrypt_packed_bin(
 /* Convenience wrapper around obf_deobf_outer_key to automatically pass in
  * correct loader code offsets. */
 void loader_outer_key_deobfuscate(
-        struct des_key *old_key,
-        struct des_key *new_key) {
+        struct aes_key *old_key,
+        struct aes_key *new_key) {
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *) LOADER_ADDR;
 
@@ -358,8 +358,8 @@ void *load(void *entry_stacktop) {
     Elf64_Ehdr *packed_bin_ehdr = (Elf64_Ehdr *) (packed_bin_phdr->p_vaddr);
 
     DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
-    // 拿到DES的真实KEY
-    struct des_key actual_key;
+    // 拿到AES的真实KEY
+    struct aes_key actual_key;
     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key);
     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
     // for (int i = 0; i < 7; i++)

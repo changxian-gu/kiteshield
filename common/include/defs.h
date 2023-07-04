@@ -48,6 +48,10 @@ struct des_key {
   uint8_t bytes[8];
 } __attribute__((packed));
 
+struct aes_key {
+  uint8_t bytes[16];
+} __attribute__((packed));
+
 /* Represents a function that has been encrypted/instrumented and that the
  * runtime knows about.
  */
@@ -57,7 +61,7 @@ struct function {
   uint32_t len;
 
   /* Key that this function's code is encrypted with */
-  struct des_key key;
+  struct aes_key key;
 
 /* For logging purposes in debug mode */
 #ifdef DEBUG_OUTPUT

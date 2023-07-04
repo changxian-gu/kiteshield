@@ -17,7 +17,7 @@
 #include "common/include/defs.h"
 #include "packer/include/elfutils.h"
 // #include "common/include/des.h"
-#include "cipher/des3.h"
+#include "cipher/aes.h"
 #include "cipher_modes/ecb.h"
 
 #include "loader/out/generated_loader_rt.h"
@@ -128,7 +128,7 @@ static int produce_output_elf(
     Elf64_Addr entry_vaddr = LOADER_ADDR +
                              sizeof(Elf64_Ehdr) +
                              (sizeof(Elf64_Phdr) * 2) +
-                             sizeof(struct des_key);
+                             sizeof(struct aes_key);
     Elf64_Ehdr ehdr;
     ehdr.e_ident[EI_MAG0] = ELFMAG0;
     ehdr.e_ident[EI_MAG1] = ELFMAG1;
@@ -215,15 +215,17 @@ static int get_random_bytes(void *buf, size_t len) {
     return 0;
 }
 
-static void encrypt_memory_range(struct des_key *key, void *start, size_t* len) {
-    unsigned char* out = (unsigned char*)malloc((*len + 8)*sizeof(char));
+static void encrypt_memory_range(struct aes_key *key, void *start, size_t* len) {
+    size_t key_len = sizeof(struct aes_key);
+    printf("aes key_len : %d\n", key_len);
+    unsigned char* out = (unsigned char*)malloc((*len) * sizeof(char));
     printf("before enc, len : %lu\n", *len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
-    unsigned long t = *len - *len % 8;
-    Des3Context des3_context;
-    des3Init(&des3_context, key->bytes, 8);
-    ecbEncrypt(DES3_CIPHER_ALGO, &des3_context, start, out, t);
+    unsigned long t = *len - *len % key_len;
+    AesContext aes_context;
+    aesInit(&aes_context, key->bytes, key_len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, t);
     memcpy(start, out, *len);
 }
 
@@ -316,8 +318,7 @@ static int process_func(
     tp->fcn_i = rt_info->nfuncs;
     tp->plain_value = *func_start;
 
-    int align = 8;
-    size_t size_need_to_enc = func_sym->st_size - func_sym->st_size % align;
+    size_t size_need_to_enc = func_sym->st_size;
     encrypt_memory_range(&fcn->key, func_start, &size_need_to_enc);
     
     // 记录下第一个字节原来的值，下面用INT3替换掉
@@ -484,7 +485,7 @@ static int apply_outer_encryption(
         void *loader_start,
         size_t loader_size) {
     
-    struct des_key key;
+    struct aes_key key;
     CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
 
     info("applying outer encryption with key %s", STRINGIFY_KEY(key));
@@ -494,12 +495,12 @@ static int apply_outer_encryption(
     encrypt_memory_range(&key, elf->start, &(elf->size));
 
     /* Obfuscate Key */
-    struct des_key obfuscated_key;
+    struct aes_key obfuscated_key;
     obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
     info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
 
     /* Copy over obfuscated key so the loader can decrypt */
-    *((struct des_key *) loader_start) = obfuscated_key;
+    *((struct aes_key *) loader_start) = obfuscated_key;
 
     return 0;
 }
@@ -645,10 +646,10 @@ int main(int argc, char *argv[]) {
     }
 
     /* Fully strip binary */
-    if (full_strip(&elf) == -1) {
-        err("could not strip binary");
-        return -1;
-    }
+    // if (full_strip(&elf) == -1) {
+    //     err("could not strip binary");
+    //     return -1;
+    // }
 
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);
