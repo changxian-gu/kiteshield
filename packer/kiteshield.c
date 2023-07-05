@@ -318,7 +318,7 @@ static int process_func(
     tp->fcn_i = rt_info->nfuncs;
     tp->plain_value = *func_start;
 
-    size_t size_need_to_enc = func_sym->st_size;
+    size_t size_need_to_enc = fcn->len;
     encrypt_memory_range(&fcn->key, func_start, &size_need_to_enc);
     
     // 记录下第一个字节原来的值，下面用INT3替换掉
@@ -364,6 +364,7 @@ static int apply_inner_encryption(
      *      = 1M * 16
      *
      */
+    // 为function数组和trap_point数组分配空间
     struct function *fcn_arr;
     CK_NEQ_PERROR(fcn_arr = malloc(1 << 24), NULL);
 

@@ -414,13 +414,14 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                           "with key %s",
                           thread->tid, new_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
-                set_byte_at_addr(thread->tid, prev_fcn->start_addr, tp->plain_value);
-                aes_encrypt_fcn(thread->tid, new_fcn);
+                set_byte_at_addr(thread->tid, prev_fcn->start_addr, tp->value);
+                aes_decrypt_fcn(thread->tid, new_fcn);
                 set_byte_at_addr(thread->tid, new_fcn->start_addr, INT3);
             }
 
             FCN_ENTER(thread, new_fcn);
         }
+    // 如果没有在记录的函数数组里找到这个新的函数, 不对当前的新函数进行操作
     } else if (!new_fcn) {
         /* We've left the function we were previously in for a new one that we
          * don't have a record of. */
@@ -438,6 +439,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
             aes_encrypt_fcn(thread->tid, prev_fcn);
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, INT3);
         }
+    // 还在之前的函数中执行(函数可能存在递归调用的情况，所以函数内部的jmp不需要处理，如果到达函数的ret指令，和执行其他函数一样正常操作)
     } else {
         /* We've executed an instrumented jmp or ret but remained in the same
          * function */
