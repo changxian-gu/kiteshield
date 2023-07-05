@@ -222,11 +222,14 @@ static void encrypt_memory_range(struct aes_key *key, void *start, size_t* len) 
     printf("before enc, len : %lu\n", *len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
-    unsigned long t = *len - *len % key_len;
+    unsigned long actual_encrypt_len = *len - *len % key_len;
+    printf("actual encrypt len : %lu\n", actual_encrypt_len);
+    if (actual_encrypt_len  == 0)
+        return;
     AesContext aes_context;
     aesInit(&aes_context, key->bytes, key_len);
-    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, t);
-    memcpy(start, out, *len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
 }
 
 static uint64_t get_base_addr(Elf64_Ehdr *ehdr) {

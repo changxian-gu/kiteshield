@@ -185,6 +185,8 @@ void print_hex(unsigned char* buf, int len) {
 static void aes_decrypt_fcn(pid_t tid, struct function *fcn) {
     int key_len = sizeof(fcn->key);
     unsigned long size = fcn->len - fcn->len % key_len;
+    if (size == 0)
+        return;
     size_t remaining = size;
     char* in = (char *)ks_malloc(remaining * sizeof(char));
     char* out = (char *)ks_malloc(remaining * sizeof(char));
@@ -220,6 +222,8 @@ static void aes_decrypt_fcn(pid_t tid, struct function *fcn) {
 static void aes_encrypt_fcn(pid_t tid, struct function *fcn) {
     int key_len = sizeof(fcn->key);
     unsigned long size = fcn->len - fcn->len % key_len;
+    if (size == 0)
+        return;
     size_t remaining = size;
     char* in = (char *)ks_malloc(remaining * sizeof(char));
     char* out = (char *)ks_malloc(remaining * sizeof(char));
