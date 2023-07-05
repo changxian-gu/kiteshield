@@ -290,14 +290,14 @@ static void decrypt_packed_bin(
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
 
-    char* out = (char*)ks_malloc((*packed_bin_size)*sizeof(char));
+    unsigned long t = *packed_bin_size - *packed_bin_size % sizeof(struct aes_key);
+    char* out = (char*)ks_malloc(t * sizeof(char));
     DEBUG_FMT("the val : %d\n", *(char*)out);
-    unsigned long t = *packed_bin_size - *packed_bin_size % 8;
     AesContext aes_context;
     aesInit(&aes_context, key->bytes, sizeof(struct aes_key));
     ecbDecrypt(AES_CIPHER_ALGO, &aes_context, packed_bin_start, out, t);
     DEBUG_FMT("the val : %d\n", *((char*)out));
-    memcpy(packed_bin_start, out, *packed_bin_size);
+    memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
 }
@@ -362,10 +362,7 @@ void *load(void *entry_stacktop) {
     struct aes_key actual_key;
     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key);
     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-    // for (int i = 0; i < 7; i++)
-    //     actual_key.bytes[i] = 0;
 
-    // 解密并修改解密后的大小（arg2）
     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
                        &(packed_bin_phdr->p_memsz),
                        &actual_key);

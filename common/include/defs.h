@@ -90,7 +90,9 @@ struct trap_point {
 
   /* Byte that was overwritten by the int3, needed so we can overwrite and
    * execute the original instruction */
+  // 加密后的字节
   uint8_t value;
+  // 加密前的字节
   uint8_t plain_value;
 
   /* Index into the function array for the containing function */
@@ -101,9 +103,11 @@ struct trap_point {
  * needs to do its job. One of these is stored at a predefined offset via the
  * linker script so that the runtime can access it.
  */
+
 struct runtime_info {
   int nfuncs;
   int ntraps;
+  // data存储了trap_point数组和function数组，前面是tp，后面是func
   uint8_t data[];
 } __attribute__((packed));
 

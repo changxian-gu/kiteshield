@@ -63,6 +63,7 @@ struct thread_group {
  * per-thread as multiple threads could be executing in the same address space.
  */
 struct address_space {
+    // 在这个函数的地址空间内的线程数量
     int refcnt;
 
     /* Array of "reference counts" indexed by function id of functions in this
@@ -72,6 +73,7 @@ struct address_space {
      * reaches 0, that indicates we can safely encrypt the function as no thread
      * will return to it in the future, expecting it to be decrypted.
      */
+    
     uint64_t *fcn_ref_arr;
 };
 
@@ -103,7 +105,9 @@ struct thread_list {
     struct thread *head;
 };
 
+// 找到trap_point所在地址
 struct trap_point *get_tp(uint64_t addr) {
+    // rt_info.data保存了所有trap_point，存储的是trap_point的数组，trap_point结构体保存了函数的地址
     struct trap_point *arr = (struct trap_point *) rt_info.data;
     for (int i = 0; i < rt_info.ntraps; i++) {
         if (arr[i].addr == addr) {
@@ -119,6 +123,7 @@ static struct function *get_fcn_at_addr(uint64_t addr) {
 
     for (int i = 0; i < rt_info.nfuncs; i++) {
         struct function *curr = &arr[i];
+        // 查看当前ip(指令寄存器)所存的地址是否在当前函数地址范围内
         if (curr->start_addr <= addr && (curr->start_addr + curr->len) > addr)
             return curr;
     }
@@ -361,12 +366,15 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
 
     /* We've now executed the ret or jmp instruction and are in the (potentially)
      * new function. Figure out what it is. */
+
     struct user_regs_struct regs;
     long res = sys_ptrace(PTRACE_GETREGS, thread->tid, NULL, &regs);
     DIE_IF_FMT(res < 0, "PTRACE_GETREGS failed with error %d", res);
     struct function *prev_fcn = FCN_FROM_TP(tp);
+    // 从当前已经记录的函数数组中寻找
     struct function *new_fcn = get_fcn_at_addr(regs.ip);
 
+    // 从记录的函数数组中找到了，并且不是之前的函数（进入到了新函数的地址空间内）
     if (new_fcn != NULL && new_fcn != prev_fcn) {
         /* We've left the function we were previously in for a new one that we
          * have a record of */
@@ -374,6 +382,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                   prev_fcn->name, new_fcn->name, tp->type == TP_JMP ? "jmp" : "ret",
                   tp->addr);
 
+        // 无论是jmp还是ret，已经从之前的函数跳转走了，所以对于之前函数的线程引用减一
         FCN_EXIT(thread, prev_fcn);
 
         /* Encrypt the function we're leaving provided no other thread is in it */
@@ -453,6 +462,7 @@ static void handle_trap(struct thread *thread, struct thread_list *tlist,
 
     /* Stop all threads in the same address space. Must be done as to not
      * encounter concurrency issues. */
+    // 停止所有其他在当前函数地址空间内的线程（一直访问/proc/pid/stat,查询状态,当所有的不在Running状态时，继续往下执行）
     stop_threads_in_same_as(thread, tlist);
 
     res = sys_ptrace(PTRACE_GETREGS, thread->tid, NULL, &regs);
@@ -460,6 +470,7 @@ static void handle_trap(struct thread *thread, struct thread_list *tlist,
 
     /* Back up the instruction pointer to the start of the int3 in preparation
      * for executing the original instruction */
+    // 函数第一个字节是INT3，是因为这个触发的trap，把ip前移一个字节，将INT3还原为之前的字节
     regs.ip--;
 
     struct trap_point *tp = get_tp(regs.ip);
@@ -787,9 +798,11 @@ void setup_initial_thread(pid_t tid, struct thread_list *tlist) {
             break;
     }
 
+    // 保存线程信息
     struct thread *thread = ks_malloc(sizeof(struct thread));
     thread->has_wait_prio = 1;
     thread->tg = ks_malloc(sizeof(struct thread_group));
+    // 首个线程作为线程组的leader
     thread->tg->tgid = tid; /* Created via fork so it's the thread group leader */
     thread->tg->refcnt = 1;
     thread->tid = tid;
@@ -850,6 +863,8 @@ static void handle_thread_exit(struct thread *thread,
     }
 }
 
+
+// 父进程运行的函数，参数为fork出的子进程的pid
 void runtime_start(pid_t child_pid) {
     DEBUG("starting ptrace runtime");
     obf_deobf_rt_info(&rt_info);

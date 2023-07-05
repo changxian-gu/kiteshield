@@ -12,14 +12,11 @@ _start:
 
   # We've now forked. The runtime is running in our parent and will not return.
   # here. Only the child will execute the code below.
-  # 下面的内容只有子进程会执行
 #endif
 
   # Load function has the following signature
   # void load(void *entry_stacktop)
-  # 这里到底是什么意思， stacktop？？？？
   mov %rsp, %rdi # entry_stacktop
-  # 调用load函数
   call load
 
   # Return value of load is the address of ld.so to jump to, store it
