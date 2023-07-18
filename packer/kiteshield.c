@@ -12,7 +12,6 @@
 
 //#include "bddisasm.h"
 
-#include "common/include/rc4.h"
 #include "common/include/obfuscation.h"
 #include "common/include/defs.h"
 #include "packer/include/elfutils.h"
@@ -22,6 +21,20 @@
 
 #include "loader/out/generated_loader_rt.h"
 #include "loader/out/generated_loader_no_rt.h"
+
+// include compression alogrithm
+#include "compression/lzo/minilzo.h"
+
+/* Work-memory needed for compression. Allocate memory in units
+ * of 'lzo_align_t' (instead of 'char') to make sure it is properly aligned.
+ */
+
+#define HEAP_ALLOC(var,size) \
+    lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
+
+static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
+
+
 
 /* Convenience macro for error checking libc calls */
 #define CK_NEQ_PERROR(stmt, err)                                              \
@@ -191,7 +204,7 @@ static int produce_output_elf(
     app_phdr.p_vaddr = PACKED_BIN_ADDR + app_offset; /* Keep vaddr aligned */
     app_phdr.p_paddr = app_phdr.p_vaddr;
     app_phdr.p_filesz = elf->size;
-    app_phdr.p_memsz = elf->size;
+    app_phdr.p_memsz = elf->origin_size;
     app_phdr.p_flags = PF_R | PF_W;
     app_phdr.p_align = 0x200000;
     // 写入app program header
@@ -377,6 +390,7 @@ static int apply_inner_encryption(
     // 遍历符号表
     ELF_FOR_EACH_SYMBOL(elf, sym) {
         // 加密func
+        // 判断symbol是否为func
         if (ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
             continue;
 
@@ -390,7 +404,7 @@ static int apply_inner_encryption(
          */
         uint64_t base = get_base_addr(elf->ehdr);
         struct function *alias = NULL;
-        // nfunc代表了已经加密的函数的个数，这个循环是在遍历，看是否函数会被重复加密
+        // 判断当前func symbol是否已经被处理
         for (size_t i = 0; i < (*rt_info)->nfuncs; i++) {
             struct function *fcn = &fcn_arr[i];
 
@@ -584,6 +598,74 @@ static void banner() {
 //  info("\n");
 }
 
+int apply_outer_compression(struct mapped_elf* elf) {
+    int r;
+    lzo_uint in_len;
+    lzo_uint out_len;
+    lzo_uint new_len;
+
+ /*
+ * Step 1: initialize the LZO library
+ */
+    if (lzo_init() != LZO_E_OK)
+    {
+        printf( "internal error - lzo_init() failed !!!\n");
+        printf( "(this usually indicates a compiler bug - try recompiling\nwithout optimizations, and enable '-DLZO_DEBUG' for diagnostics)\n");
+        return 3;
+    }
+
+/*
+ * Step 2: prepare the input block that will get compressed.
+ *         We just fill it with zeros in this example program,
+ *         but you would use your real-world data here.
+ */
+    in_len = elf->size;
+    out_len = in_len + in_len / 16 + 64 + 3;
+    // lzo_memset(in,0,in_len);
+
+/*
+ * Step 3: compress from 'in' to 'out' with LZO1X-1
+ */
+    const unsigned char* in = elf->start;
+    uint8_t out[out_len];
+
+    r = lzo1x_1_compress(in,in_len,out,&out_len,wrkmem);
+    if (r == LZO_E_OK) {
+        printf( "compressed %lu bytes into %lu bytes\n",
+            (unsigned long) in_len, (unsigned long) out_len);
+    } else {
+        /* this should NEVER happen */
+        printf( "internal error - compression failed: %d\n", r);
+        return 2;
+    }
+    /* check for an incompressible block */
+    if (out_len >= in_len)
+    {
+        printf( "This block contains incompressible data.\n");
+        return 0;
+    }
+    memcpy(elf->start, out, out_len);
+    elf->size = out_len;
+
+// /*
+//  * Step 4: decompress again, now going from 'out' to 'in'
+//  */
+//     new_len = in_len;
+//     r = lzo1x_decompress(out,out_len,in,&new_len,NULL);
+//     if (r == LZO_E_OK && new_len == in_len) {
+//         printf( "decompressed %lu bytes back into %lu bytes\n",
+//             (unsigned long) out_len, (unsigned long) in_len);
+//     } else {
+//         /* this should NEVER happen */
+//         printf( "internal error - decompression failed: %d\n", r);
+//         return 1;
+//     }
+
+//     printf( "\nminiLZO simple compression test passed.\n");
+    return 0;
+
+}
+
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
     int layer_one_only = 0;
@@ -661,6 +743,13 @@ int main(int argc, char *argv[]) {
         err("could not apply outer encryption");
         return -1;
     }
+    verbose("packed app data : %d %d %d %d\n", *(unsigned char*)elf.start, *((unsigned char*)elf.start + 1),*((unsigned char*)elf.start + 2),*((unsigned char*)elf.start + 3));
+
+    ret = apply_outer_compression(&elf);
+    if (ret != 0) {
+        printf("[compression]: something wrong!\n");
+    }
+
 
     /* Write output ELF */
     FILE *output_file;

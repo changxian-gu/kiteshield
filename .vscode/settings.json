@@ -31,7 +31,8 @@
         "stdarg.h": "c",
         "stddef.h": "c",
         "stdbool.h": "c",
-        "ecb.h": "c"
+        "ecb.h": "c",
+        "random": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

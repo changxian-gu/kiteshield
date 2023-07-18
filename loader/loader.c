@@ -13,6 +13,8 @@
 #include "loader/include/anti_debug.h"
 #include "loader/include/string.h"
 
+#include "compression/lzo/minilzo.h"
+
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1 << PAGE_SHIFT)
@@ -284,7 +286,7 @@ static void decrypt_packed_bin(
         size_t *packed_bin_size,
         struct aes_key *key) {
 
-    DEBUG_FMT("DES decrypting binary with key %s", STRINGIFY_KEY(key));
+    DEBUG_FMT("AES decrypting binary with key %s", STRINGIFY_KEY(key));
     DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
     DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
@@ -322,6 +324,19 @@ void loader_outer_key_deobfuscate(
     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
 
     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
+}
+
+int decompress_bin(const uint8_t* in, lzo_uint in_len, uint8_t* out, lzo_uint* out_len) {
+    int r = lzo1x_decompress(in, in_len, out, out_len, NULL);
+    if (r == LZO_E_OK) {
+        DEBUG_FMT("[Decompression(lzo)] decompressed %d bytes into %d bytes\n",
+            (unsigned long) in_len, (unsigned long) *out_len);
+    } else {
+        /* this should NEVER happen */
+        DEBUG_FMT("[Decompression(lzo)] internal error - decompression failed: %d\n", r);
+        return 1;
+    }
+    return 0;
 }
 
 /* Load the packed binary, returns the address to hand control to when done */
@@ -362,6 +377,18 @@ void *load(void *entry_stacktop) {
     struct aes_key actual_key;
     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key);
     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
+
+    // lzo decompression
+    // 需要解压的大小
+    lzo_uint in_len = packed_bin_phdr->p_filesz;
+    // 解压后的大小 
+    lzo_uint output_len = packed_bin_phdr->p_memsz;
+    uint8_t out_buff[output_len];
+    int ret = decompress_bin((uint8_t *) packed_bin_phdr->p_vaddr, in_len, out_buff, &output_len);
+    if (ret != 0) {
+        ks_printf(1, "[decompression]: something wrong!\n");
+    }
+    memcpy((void*) packed_bin_phdr->p_vaddr, out_buff, output_len);
 
     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
                        &(packed_bin_phdr->p_memsz),
