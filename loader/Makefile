@@ -5,7 +5,7 @@ LIB = -L../cyclone_cipher -lcrypto
 
 CFLAGS = $(CFLAGS_COMMON)
 
-SRCS = $(wildcard *.[c,S] ../common/*.c ../compression/lzo/minilzo.c)
+SRCS = $(wildcard *.[c,S] ../common/*.c ../compression/lzma/*.c)
 OBJS_RT = $(addprefix out/rt/, $(addsuffix .o, $(basename $(notdir $(SRCS:.c=.o)))))
 OBJS_NO_RT = $(addprefix out/no_rt/, $(addsuffix .o, $(basename $(notdir $(SRCS:.c=.o)))))
 
@@ -44,7 +44,7 @@ out/rt/%.o: %.c
 out/rt/%.o: ../common/%.c
 	$(CC) -DUSE_RUNTIME $(CFLAGS) $< -o $@
 
-out/rt/minilzo.o: ../compression/lzo/minilzo.c
+out/rt/%.o: ../compression/lzma/%.c
 	$(CC) -DUSE_RUNTIME $(CFLAGS) $< -o $@
 
 out/rt/%.o: %.S
@@ -56,7 +56,7 @@ out/no_rt/%.o: %.c
 out/no_rt/%.o: ../common/%.c
 	$(CC) $(CFLAGS) $< -o $@
 
-out/no_rt/minilzo.o: ../compression/lzo/minilzo.c
+out/no_rt/%.o: ../compression/lzma/%.c
 	$(CC) $(CFLAGS) $< -o $@
 
 

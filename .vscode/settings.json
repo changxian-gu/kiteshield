@@ -32,7 +32,9 @@
         "stddef.h": "c",
         "stdbool.h": "c",
         "ecb.h": "c",
-        "random": "c"
+        "random": "c",
+        "lzfind.h": "c",
+        "lzma.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

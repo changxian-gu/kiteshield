@@ -1,10 +1,10 @@
-CFLAGS_COMMON = -Wall -std=gnu99 -I .. -I../cyclone_cipher -I../cyclone_cipher/common
+CFLAGS_COMMON = -Wall -std=gnu99 -I .. -I../cyclone_cipher -I../cyclone_cipher/common -I../compression/lzma
 # CFLAGS_COMMON = -Wall -Werror -std=gnu99 -I ..
 CFLAGS = $(CFLAGS_COMMON)
 LDFLAGS = -Lbddisasm/bin/x64/Release -static
 LIB = -L../cyclone_cipher -lcrypto
 
-SRCS = $(wildcard *.c ../common/*.c ../loader/malloc.c ../loader/syscalls.c ../loader/debug.c ../loader/string.c ../compression/lzo/minilzo.c)
+SRCS = $(wildcard *.c ../common/*.c ../loader/malloc.c ../loader/syscalls.c ../loader/debug.c ../loader/string.c ../compression/lzma/*.c)
 OBJS = $(addprefix ./obj/, $(notdir $(SRCS:.c=.o)))
 BIN_NAME = kiteshield
 
@@ -32,7 +32,7 @@ obj/%.o: ../common/%.c
 obj/%.o: ../loader/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-obj/minilzo.o: ../compression/lzo/minilzo.c
+obj/%.o: ../compression/lzma/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:

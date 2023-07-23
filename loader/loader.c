@@ -13,7 +13,7 @@
 #include "loader/include/anti_debug.h"
 #include "loader/include/string.h"
 
-#include "compression/lzo/minilzo.h"
+#include "compression/lzma/Lzma.h"
 
 
 #define PAGE_SHIFT 12
@@ -326,16 +326,7 @@ void loader_outer_key_deobfuscate(
     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
 }
 
-int decompress_bin(const uint8_t* in, lzo_uint in_len, uint8_t* out, lzo_uint* out_len) {
-    int r = lzo1x_decompress(in, in_len, out, out_len, NULL);
-    if (r == LZO_E_OK) {
-        DEBUG_FMT("[Decompression(lzo)] decompressed %d bytes into %d bytes\n",
-            (unsigned long) in_len, (unsigned long) *out_len);
-    } else {
-        /* this should NEVER happen */
-        DEBUG_FMT("[Decompression(lzo)] internal error - decompression failed: %d\n", r);
-        return 1;
-    }
+int decompress_bin(const uint8_t* in, uint32_t in_len, uint8_t* out, uint32_t* out_len) {
     return 0;
 }
 
@@ -378,17 +369,32 @@ void *load(void *entry_stacktop) {
     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key);
     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
 
-    // lzo decompression
-    // 需要解压的大小
-    lzo_uint in_len = packed_bin_phdr->p_filesz;
-    // 解压后的大小 
-    lzo_uint output_len = packed_bin_phdr->p_memsz;
-    uint8_t out_buff[output_len];
-    int ret = decompress_bin((uint8_t *) packed_bin_phdr->p_vaddr, in_len, out_buff, &output_len);
-    if (ret != 0) {
-        ks_printf(1, "[decompression]: something wrong!\n");
-    }
-    memcpy((void*) packed_bin_phdr->p_vaddr, out_buff, output_len);
+    // // lzo decompression
+    // // 需要解压的大小
+    // lzo_uint in_len = packed_bin_phdr->p_filesz;
+    // // 解压后的大小 
+    // lzo_uint output_len = packed_bin_phdr->p_memsz;
+    // uint8_t out_buff[output_len];
+    // int ret = decompress_bin((uint8_t *) packed_bin_phdr->p_vaddr, in_len, out_buff, &output_len);
+    // if (ret != 0) {
+    //     ks_printf(1, "[decompression]: something wrong!\n");
+    // }
+    // memcpy((void*) packed_bin_phdr->p_vaddr, out_buff, output_len);
+
+
+    // lzma decompression
+    uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+    uint32_t compressedSize = packed_bin_phdr->p_filesz;
+    uint32_t decompressedSize;
+    uint8_t* decompressedBlob = lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
+	if (decompressedBlob) {
+		DEBUG("Decompressed:\n");
+		hexdump(decompressedBlob, decompressedSize);
+	} else {
+		DEBUG("Nope, we screwed it (part 2)\n");
+		return;
+	}
+    memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
 
     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
                        &(packed_bin_phdr->p_memsz),

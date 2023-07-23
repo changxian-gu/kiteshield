@@ -209,3 +209,22 @@ void *memset(void *s, int c, size_t n) {
         ((char *) s)[i] = (char) c;
     return s;
 }
+
+void *memmove(void *dest, const void *src, size_t n) {
+  char *d = (char *)dest;
+  const char *s = (const char *)src;
+
+  // 如果源地址和目标地址有重叠,则需要从后向前拷贝
+  if (d < s && s < d + n) {
+    for (size_t i = n; i > 0; i--) {
+      d[i-1] = s[i-1]; 
+    }
+  } else {
+    // 否则可以直接从前向后拷贝
+    for (size_t i = 0; i < n; i++) {
+      d[i] = s[i];
+    }
+  }
+
+  return dest;
+}
