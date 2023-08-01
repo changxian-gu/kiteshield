@@ -1,5 +1,4 @@
 #include <stdarg.h>
-
 #include "string.h"
 #include "types.h"
 #include "obfuscated_strings.h"

@@ -76,4 +76,5 @@ int main() {
 	if (size == sizeof dstDxt1 && compare == 0) {
 		sys_exit(0);
 	}
+	sys_exit(-1);
 }

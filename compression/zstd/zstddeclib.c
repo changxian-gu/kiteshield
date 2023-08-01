@@ -32,7 +32,6 @@
  * re-running without the "-x legacy/zstd_legacy.h" option (it excludes the
  * legacy support at the source level).
  */
-#define assert(condition) ((void)0)
 #define DEBUGLEVEL 0
 #define MEM_MODULE
 #undef  XXH_NAMESPACE
