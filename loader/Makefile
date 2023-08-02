@@ -5,7 +5,7 @@ LIB = -L../cyclone_cipher -lcrypto
 
 CFLAGS = $(CFLAGS_COMMON)
 
-SRCS = $(wildcard *.[c,S] ../common/*.c ../compression/lzma/*.c)
+SRCS = $(wildcard *.[c,S] ../common/*.c)
 OBJS_RT = $(addprefix out/rt/, $(addsuffix .o, $(basename $(notdir $(SRCS:.c=.o)))))
 OBJS_NO_RT = $(addprefix out/no_rt/, $(addsuffix .o, $(basename $(notdir $(SRCS:.c=.o)))))
 

@@ -9,6 +9,8 @@ void ks_malloc_deinit();
 
 void *ks_malloc(size_t size);
 
+void *ks_calloc(size_t num, size_t size);
+
 void ks_free(void *ptr);
 
 int ks_malloc_get_n_blocks();

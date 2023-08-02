@@ -24,6 +24,7 @@
 
 // include compression alogrithm
 #include "compression/lzma/Lzma.h"
+#include "compression/zstd/zstd.h"
 
 /* Work-memory needed for compression. Allocate memory in units
  * of 'lzo_align_t' (instead of 'char') to make sure it is properly aligned.
@@ -603,26 +604,21 @@ int apply_outer_compression(struct mapped_elf* elf) {
     int size = elf->size;
     hexdump(input, size);
 
-    uint32_t compressedSize;
-    uint8_t* compressedBlob = lzmaCompress(input, size, &compressedSize);
 
+    uint32_t compressedSize = ZSTD_compressBound(size);
+    uint8_t* compressedBlob = malloc(compressedSize);
+    compressedSize = ZSTD_compress(compressedBlob, compressedSize, input, size, 1);
+    
 	if (compressedBlob) {
-		printf("Compressed:\n");
-		hexdump(compressedBlob, compressedSize);
+		printf("Compressed: %d to %d\n", size, compressedSize);
 	} else {
 		printf("Nope, we screwed it\n");
 		return;
 	}
 
-    // uint32_t decompressedSize;
-    // uint8_t* decompressedBlob = lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
-	// if (decompressedBlob) {
-	// 	printf("Decompressed:\n");
-	// 	hexdump(decompressedBlob, decompressedSize);
-	// } else {
-	// 	printf("Nope, we screwed it (part 2)\n");
-	// 	return;
-	// }
+    // uint8_t decompressed_blob[size];
+    // int decompressed_size = size;
+    // decompressed_size = ZSTD_decompress(decompressed_blob, decompressed_size, compressedBlob, compressedSize);
 
     memcpy(elf->start, compressedBlob, compressedSize);
     elf->size = compressedSize;

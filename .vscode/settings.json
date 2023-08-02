@@ -34,7 +34,8 @@
         "ecb.h": "c",
         "random": "c",
         "lzfind.h": "c",
-        "lzma.h": "c"
+        "lzma.h": "c",
+        "*.ch": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

@@ -14,7 +14,8 @@
 #include "loader/include/string.h"
 
 #include "compression/lzma/Lzma.h"
-
+// zstd解压的单文件实现，直接包含较为简单(日后可修正)
+#include "compression/zstd/zstddeclib.c"
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1 << PAGE_SHIFT)
@@ -369,32 +370,15 @@ void *load(void *entry_stacktop) {
     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key);
     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
 
-    // // lzo decompression
-    // // 需要解压的大小
-    // lzo_uint in_len = packed_bin_phdr->p_filesz;
-    // // 解压后的大小 
-    // lzo_uint output_len = packed_bin_phdr->p_memsz;
-    // uint8_t out_buff[output_len];
-    // int ret = decompress_bin((uint8_t *) packed_bin_phdr->p_vaddr, in_len, out_buff, &output_len);
-    // if (ret != 0) {
-    //     ks_printf(1, "[decompression]: something wrong!\n");
-    // }
-    // memcpy((void*) packed_bin_phdr->p_vaddr, out_buff, output_len);
-
-
-    // lzma decompression
+    // zstd decompression
     uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
     uint32_t compressedSize = packed_bin_phdr->p_filesz;
-    uint32_t decompressedSize;
-    uint8_t* decompressedBlob = lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
-	if (decompressedBlob) {
-		DEBUG("Decompressed:\n");
-		hexdump(decompressedBlob, decompressedSize);
-	} else {
-		DEBUG("Nope, we screwed it (part 2)\n");
-		return;
-	}
+    uint32_t decompressedSize = packed_bin_phdr->p_memsz;
+    uint8_t* decompressedBlob = ks_malloc(decompressedSize);
+    DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
+    decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize, compressedBlob, compressedSize);
     memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+
 
     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
                        &(packed_bin_phdr->p_memsz),

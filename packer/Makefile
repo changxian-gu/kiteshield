@@ -1,7 +1,7 @@
-CFLAGS_COMMON = -Wall -std=gnu99 -I .. -I../cyclone_cipher -I../cyclone_cipher/common -I../compression/lzma
+CFLAGS_COMMON = -Wall -std=gnu99 -I .. -I../cyclone_cipher -I../cyclone_cipher/common -I../compression/lzma 
 # CFLAGS_COMMON = -Wall -Werror -std=gnu99 -I ..
 CFLAGS = $(CFLAGS_COMMON)
-LDFLAGS = -Lbddisasm/bin/x64/Release -static
+LDFLAGS = -Lbddisasm/bin/x64/Release -static -L../compression/zstd/ -lzstd
 LIB = -L../cyclone_cipher -lcrypto
 
 SRCS = $(wildcard *.c ../common/*.c ../loader/malloc.c ../loader/syscalls.c ../loader/debug.c ../loader/string.c ../compression/lzma/*.c)
