@@ -65,6 +65,5 @@ def output_header(f):
     f.write('\n')
     f.write('#endif /* __KITESHIELD_OBFUSCATED_STRINGS_H */\n')
 
-
 if __name__ == '__main__':
     output_header(sys.stdout)

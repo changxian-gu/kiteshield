@@ -12,6 +12,7 @@
 #include "loader/include/syscalls.h"
 #include "loader/include/anti_debug.h"
 #include "loader/include/string.h"
+#include "common/include/use_what_alogirthm.h"
 
 #include "compression/lzma/Lzma.h"
 // zstd解压的单文件实现，直接包含较为简单(日后可修正)
@@ -379,11 +380,9 @@ void *load(void *entry_stacktop) {
     decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize, compressedBlob, compressedSize);
     memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
 
-
     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
                        &(packed_bin_phdr->p_memsz),
                        &actual_key);
-
 
     /* Entry point for ld.so if this is not a statically linked binary, otherwise
      * map_elf_from_mem will not touch this and it will be set below. */

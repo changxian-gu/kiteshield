@@ -48,6 +48,10 @@ struct des_key {
   uint8_t bytes[8];
 } __attribute__((packed));
 
+struct des3_key {
+  uint8_t bytes[8];
+} __attribute__((packed));
+
 struct aes_key {
   uint8_t bytes[16];
 } __attribute__((packed));

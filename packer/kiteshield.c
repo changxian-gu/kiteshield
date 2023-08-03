@@ -12,6 +12,7 @@
 
 //#include "bddisasm.h"
 
+#include "common/include/use_what_alogirthm.h"
 #include "common/include/obfuscation.h"
 #include "common/include/defs.h"
 #include "packer/include/elfutils.h"
@@ -35,6 +36,21 @@
 
 // static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
+enum Encryption {
+    RC4 = 1,
+    DES,
+    TDEA,
+    AES
+};
+enum Compression {
+    LZMA = 1,
+    LZO,
+    UCL,
+    ZSTD
+};
+
+enum Encryption encryption_algorithm = AES;
+enum Compression compression_algorithm = ZSTD;
 
 
 /* Convenience macro for error checking libc calls */
@@ -54,21 +70,6 @@
      buf; })
 
 static int log_verbose = 0;
-
-/* Needs to be defined for bddisasm */
-int nd_vsnprintf_s(
-        char *buffer,
-        size_t sizeOfBuffer,
-        size_t count,
-        const char *format,
-        va_list argptr) {
-    return vsnprintf(buffer, sizeOfBuffer, format, argptr);
-}
-
-/* Needs to be defined for bddisasm */
-void *nd_memset(void *s, int c, size_t n) {
-    return memset(s, c, n);
-}
 
 static void err(char *fmt, ...) {
     va_list args;
@@ -237,6 +238,75 @@ static void encrypt_memory_range(struct aes_key *key, void *start, size_t* len) 
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
     unsigned long actual_encrypt_len = *len - *len % key_len;
+    printf("actual encrypt len : %lu\n", actual_encrypt_len);
+    if (actual_encrypt_len  == 0)
+        return;
+    AesContext aes_context;
+    aesInit(&aes_context, key->bytes, key_len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+}
+
+
+static void encrypt_memory_range_aes(struct aes_key *key, void *start, size_t len) {
+    size_t key_len = sizeof(struct aes_key);
+    printf("aes key_len : %d\n", key_len);
+    unsigned char* out = (unsigned char*)malloc((len) * sizeof(char));
+    printf("before enc, len : %lu\n", len);
+    // 使用DES加密后密文长度可能会大于明文长度怎么办?
+    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
+    unsigned long actual_encrypt_len = len - len % key_len;
+    printf("actual encrypt len : %lu\n", actual_encrypt_len);
+    if (actual_encrypt_len  == 0)
+        return;
+    AesContext aes_context;
+    aesInit(&aes_context, key->bytes, key_len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+}
+
+static void encrypt_memory_range_rc4(struct rc4_key *key, void *start, size_t len) {
+    size_t key_len = sizeof(struct rc4_key);
+    printf("aes key_len : %d\n", key_len);
+    unsigned char* out = (unsigned char*)malloc((len) * sizeof(char));
+    printf("before enc, len : %lu\n", len);
+    // 使用DES加密后密文长度可能会大于明文长度怎么办?
+    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
+    unsigned long actual_encrypt_len = len - len % key_len;
+    printf("actual encrypt len : %lu\n", actual_encrypt_len);
+    if (actual_encrypt_len  == 0)
+        return;
+    AesContext aes_context;
+    aesInit(&aes_context, key->bytes, key_len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+}
+
+static void encrypt_memory_range_des(struct des_key *key, void *start, size_t len) {
+    size_t key_len = sizeof(struct des_key);
+    printf("aes key_len : %d\n", key_len);
+    unsigned char* out = (unsigned char*)malloc((len) * sizeof(char));
+    printf("before enc, len : %lu\n", len);
+    // 使用DES加密后密文长度可能会大于明文长度怎么办?
+    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
+    unsigned long actual_encrypt_len = len - len % key_len;
+    printf("actual encrypt len : %lu\n", actual_encrypt_len);
+    if (actual_encrypt_len  == 0)
+        return;
+    AesContext aes_context;
+    aesInit(&aes_context, key->bytes, key_len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+}
+
+static void encrypt_memory_range_des3(struct des3_key *key, void *start, size_t len) {
+    size_t key_len = sizeof(struct des3_key);
+    printf("aes key_len : %d\n", key_len);
+    unsigned char* out = (unsigned char*)malloc((len) * sizeof(char));
+    printf("before enc, len : %lu\n", len);
+    // 使用DES加密后密文长度可能会大于明文长度怎么办?
+    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
+    unsigned long actual_encrypt_len = len - len % key_len;
     printf("actual encrypt len : %lu\n", actual_encrypt_len);
     if (actual_encrypt_len  == 0)
         return;
@@ -504,23 +574,59 @@ static int apply_outer_encryption(
         void *loader_start,
         size_t loader_size) {
     
-    struct aes_key key;
-    CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
-
-    info("applying outer encryption with key %s", STRINGIFY_KEY(key));
-
-    /* Encrypt the actual binary */
-    // 修改elf长度
-    encrypt_memory_range(&key, elf->start, &(elf->size));
-
-    /* Obfuscate Key */
-    struct aes_key obfuscated_key;
-    obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
-    info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
-
-    /* Copy over obfuscated key so the loader can decrypt */
-    *((struct aes_key *) loader_start) = obfuscated_key;
-
+    if (encryption_algorithm == AES) {
+        struct aes_key key;
+        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        /* Encrypt the actual binary */
+        // 修改elf长度
+        encrypt_memory_range_aes(&key, elf->start, elf->size);
+        /* Obfuscate Key */
+        struct aes_key obfuscated_key;
+        obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
+        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
+        /* Copy over obfuscated key so the loader can decrypt */
+        *((struct aes_key *) loader_start) = obfuscated_key;
+    } else if (encryption_algorithm == DES) {
+        struct des_key key;
+        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        /* Encrypt the actual binary */
+        // 修改elf长度
+        encrypt_memory_range_des(&key, elf->start, elf->size);
+        /* Obfuscate Key */
+        struct des_key obfuscated_key;
+        obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
+        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
+        /* Copy over obfuscated key so the loader can decrypt */
+        *((struct des_key *) loader_start) = obfuscated_key;
+    } else if (encryption_algorithm == RC4) {
+        struct rc4_key key;
+        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        /* Encrypt the actual binary */
+        // 修改elf长度
+        encrypt_memory_range_aes(&key, elf->start, elf->size);
+        /* Obfuscate Key */
+        struct rc4_key obfuscated_key;
+        obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
+        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
+        /* Copy over obfuscated key so the loader can decrypt */
+        *((struct rc4_key *) loader_start) = obfuscated_key;
+    } else if (encryption_algorithm == TDEA) {
+        struct des3_key key;
+        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        /* Encrypt the actual binary */
+        // 修改elf长度
+        encrypt_memory_range_aes(&key, elf->start, elf->size);
+        /* Obfuscate Key */
+        struct des3_key obfuscated_key;
+        obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
+        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
+        /* Copy over obfuscated key so the loader can decrypt */
+        *((struct des3_key *) loader_start) = obfuscated_key;
+    }
     return 0;
 }
 
@@ -631,28 +737,50 @@ int main(int argc, char *argv[]) {
     int c;
     int ret;
 
-    while ((c = getopt(argc, argv, "nv")) != -1) {
-        switch (c) {
-            case 'n':
-                layer_one_only = 1;
-                break;
-            case 'v':
-                log_verbose = 1;
-                break;
-            default:
-                usage();
-                return -1;
-        }
-    }
+    // while ((c = getopt(argc, argv, "nv")) != -1) {
+    //     switch (c) {
+    //         case 'n':
+    //             layer_one_only = 1;
+    //             break;
+    //         case 'v':
+    //             log_verbose = 1;
+    //             break;
+    //         default:
+    //             usage();
+    //             return -1;
+    //     }
+    // }
 
-    if (optind + 1 < argc) {
-        input_path = argv[optind];
-        output_path = argv[optind + 1];
-    } else {
-        usage();
+    // if (optind + 1 < argc) {
+    //     input_path = argv[optind];
+    //     output_path = argv[optind + 1];
+    // } else {
+    //     usage();
+    //     return -1;
+    // }
+    if (argc != 5) {
+        printf("[ERROR]: 接收参数错误！\n");
         return -1;
     }
-
+    input_path = argv[1];
+    output_path = argv[4];
+    switch(atoi(argv[1])) {
+        case 1:
+            encryption_algorithm = RC4;
+            break;
+        case 2:
+            encryption_algorithm = DES;
+            break;
+        case 3:
+            encryption_algorithm = TDEA;
+            break;
+        case 4:
+            encryption_algorithm = AES;
+            break;
+        default:
+            encryption_algorithm = AES;
+            break;
+    }
 
     banner();
 
@@ -691,10 +819,10 @@ int main(int argc, char *argv[]) {
     }
 
     /* Fully strip binary */
-    // if (full_strip(&elf) == -1) {
-    //     err("could not strip binary");
-    //     return -1;
-    // }
+    if (full_strip(&elf) == -1) {
+        err("could not strip binary");
+        return -1;
+    }
 
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);

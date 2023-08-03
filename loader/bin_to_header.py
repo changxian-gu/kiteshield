@@ -29,7 +29,6 @@ def bin_to_header(bin_file, array_name):
     sys.stdout.write('};\n\n')
     sys.stdout.write('#endif\n')
 
-
 if __name__ == '__main__':
     if len(sys.argv) == 2:
         bin_to_header(sys.stdin.buffer, sys.argv[1])

@@ -59,7 +59,6 @@ out/no_rt/%.o: ../common/%.c
 out/no_rt/%.o: ../compression/lzma/%.c
 	$(CC) $(CFLAGS) $< -o $@
 
-
 out/no_rt/%.o: %.S
 	$(CC) -c $< -o $@
 
