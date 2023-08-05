@@ -12,6 +12,7 @@ SECTIONS
    * (as the first segment will include one ehdr and a phdr for both the loader
    * and packed binary). Note that if this address is changed, LOADER_ADDR must
    * be updated accordingly.
+   *  跳过ELF头部和两个program header（相加为b0）
    */
   . = 0x2000b0;
   .key : {

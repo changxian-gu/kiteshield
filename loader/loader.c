@@ -15,7 +15,7 @@
 #include "common/include/use_what_alogirthm.h"
 
 #include "compression/lzma/Lzma.h"
-// zstd解压的单文件实现，直接包含较为简单(日后可修正)
+// zstd解压的单文件实现，直接包含较为简单(待修正)
 #include "compression/zstd/zstddeclib.c"
 
 #define PAGE_SHIFT 12
@@ -25,6 +25,19 @@
 #define PAGE_ALIGN_DOWN(ptr) ((ptr) & PAGE_MASK)
 #define PAGE_ALIGN_UP(ptr) ((((ptr) - 1) & PAGE_MASK) + PAGE_SIZE)
 #define PAGE_OFFSET(ptr) ((ptr) & ~(PAGE_MASK))
+
+enum Encryption {
+    RC4 = 1,
+    DES,
+    TDEA,
+    AES
+};
+enum Compression {
+    LZMA = 1,
+    LZO,
+    UCL,
+    ZSTD
+};
 
 // 串口
 // typedef struct termios termios_t;
@@ -44,7 +57,8 @@
 // }
 
 
-struct aes_key obfuscated_key __attribute__((section(".key")));
+// 编译的时候存的key其实还没有初始化，在packer里面用混淆后的key覆盖了
+struct key_placeholder obfuscated_key __attribute__((section(".key")));
 
 static void *map_load_section_from_mem(void *elf_start, Elf64_Phdr phdr) {
     uint64_t base_addr = ((Elf64_Ehdr *) elf_start)->e_type == ET_DYN ?
@@ -56,6 +70,7 @@ static void *map_load_section_from_mem(void *elf_start, Elf64_Phdr phdr) {
      * an fd (ie. we can just not touch the remaining space and it will be full
      * of zeros by default).
      */
+    // 存在疑问：为什么申请的长度这么长?
     void *addr = sys_mmap((void *) (base_addr + PAGE_ALIGN_DOWN(phdr.p_vaddr)),
                           phdr.p_memsz + PAGE_OFFSET(phdr.p_vaddr),
                           PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
@@ -221,6 +236,7 @@ static void *map_elf_from_mem(
 
     Elf64_Phdr *curr_phdr = elf_start + ehdr->e_phoff;
     Elf64_Phdr *interp_hdr = NULL;
+    // 遍历所有的program header
     for (int i = 0; i < ehdr->e_phnum; i++) {
         void *seg_addr = NULL;
 
@@ -267,14 +283,19 @@ static void setup_auxv(
         void *phdr_addr,
         void *interp_base,
         unsigned long long phnum) {
-    unsigned long long *auxv_start = argv_start;
 
+// 一个简单的宏定义，用来找到下一个NULL
 #define ADVANCE_PAST_NEXT_NULL(ptr) \
   while (*(++ptr) != 0) ;           \
   ptr++;
 
+    unsigned long long *auxv_start = argv_start;
+    // 下面这两行干嘛去？？
+    // 运行完这个宏定义到了环境变量开始的地方
     ADVANCE_PAST_NEXT_NULL(auxv_start) /* argv */
+    // 运行完这个宏定义到了环境变量结束的地方后一个
     ADVANCE_PAST_NEXT_NULL(auxv_start) /* envp */
+    // 运行完之后指向auxiliary vector开始的地方
 
     DEBUG_FMT("taking %p as auxv start", auxv_start);
     replace_auxv_ent(auxv_start, AT_ENTRY, (unsigned long long) entry);
@@ -309,8 +330,33 @@ static void decrypt_packed_bin(
 /* Convenience wrapper around obf_deobf_outer_key to automatically pass in
  * correct loader code offsets. */
 void loader_outer_key_deobfuscate(
+        struct key_placeholder *old_key,
+        struct aes_key *new_key,
+        uint8_t* loader_bin,
+        size_t loader_bin_size) {
+
+    __builtin_memcpy(new_key, old_key, sizeof(*new_key));
+
+    #ifdef NO_ANTIDEBUG
+    return;
+    #endif
+
+    /* Skip the struct des_key of course, we just want the code */
+    unsigned int loader_index = sizeof(struct key_placeholder);
+    unsigned int key_index = 0;
+    while (loader_index < loader_bin_size / 10) {
+    new_key->bytes[0] ^= loader_bin[loader_index];
+    loader_index++;
+    key_index = (key_index + 1) % sizeof(new_key->bytes);
+    }
+}
+
+
+void loader_outer_key_deobfuscate_aes (
         struct aes_key *old_key,
-        struct aes_key *new_key) {
+        struct aes_key *new_key,
+        uint8_t* loader_bin,
+        size_t loader_bin_size) {
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *) LOADER_ADDR;
 
@@ -328,13 +374,75 @@ void loader_outer_key_deobfuscate(
     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
 }
 
+// void loader_outer_key_deobfuscate_des (
+//         struct des_key *old_key,
+//         struct des_key *new_key) {
+//     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
+//     Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *) LOADER_ADDR;
+
+//     /* The PHDR in our binary corresponding to the loader (ie. this code) */
+//     Elf64_Phdr *loader_phdr = (Elf64_Phdr *)
+//             (LOADER_ADDR + us_ehdr->e_phoff);
+
+//     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
+//      * adjust loader code start and size accordingly */
+//     size_t hdr_adjust = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
+
+//     void *loader_start = (void *) loader_phdr->p_vaddr + hdr_adjust;
+//     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
+
+//     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
+// }
+
+// void loader_outer_key_deobfuscate_des3 (
+//         struct aes_key *old_key,
+//         struct aes_key *new_key) {
+//     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
+//     Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *) LOADER_ADDR;
+
+//     /* The PHDR in our binary corresponding to the loader (ie. this code) */
+//     Elf64_Phdr *loader_phdr = (Elf64_Phdr *)
+//             (LOADER_ADDR + us_ehdr->e_phoff);
+
+//     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
+//      * adjust loader code start and size accordingly */
+//     size_t hdr_adjust = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
+
+//     void *loader_start = (void *) loader_phdr->p_vaddr + hdr_adjust;
+//     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
+
+//     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
+// }
+
+// void loader_outer_key_deobfuscate_rc4 (
+//         struct aes_key *old_key,
+//         struct aes_key *new_key) {
+//     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
+//     Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *) LOADER_ADDR;
+
+//     /* The PHDR in our binary corresponding to the loader (ie. this code) */
+//     Elf64_Phdr *loader_phdr = (Elf64_Phdr *)
+//             (LOADER_ADDR + us_ehdr->e_phoff);
+
+//     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
+//      * adjust loader code start and size accordingly */
+//     size_t hdr_adjust = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
+
+//     void *loader_start = (void *) loader_phdr->p_vaddr + hdr_adjust;
+//     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
+
+//     obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
+// }
+
 int decompress_bin(const uint8_t* in, uint32_t in_len, uint8_t* out, uint32_t* out_len) {
     return 0;
 }
 
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
+    DEBUG("hello0????\n");
     ks_malloc_init();
+    // 反调试功能, 具体怎么反调试的?
     if (antidebug_proc_check_traced())
         DIE(TRACED_MSG);
 
@@ -348,7 +456,10 @@ void *load(void *entry_stacktop) {
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
+    // char* 类型的指针
     char **argv = ((char **) entry_stacktop) + 1;
+    enum Encryption encryption_algorithm = AES;
+    enum Compression compression_algorithm = ZSTD;
 
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *) LOADER_ADDR;
@@ -366,10 +477,6 @@ void *load(void *entry_stacktop) {
     Elf64_Ehdr *packed_bin_ehdr = (Elf64_Ehdr *) (packed_bin_phdr->p_vaddr);
 
     DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
-    // 拿到AES的真实KEY
-    struct aes_key actual_key;
-    loader_outer_key_deobfuscate(&obfuscated_key, &actual_key);
-    DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
 
     // zstd decompression
     uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
@@ -379,20 +486,53 @@ void *load(void *entry_stacktop) {
     DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
     decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize, compressedBlob, compressedSize);
     memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+    DEBUG("hello1????\n");
 
-    decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,
-                       &(packed_bin_phdr->p_memsz),
-                       &actual_key);
+
+    /* The first ELF segment (loader code) includes the ehdr and two phdrs,
+     * adjust loader code start and size accordingly */
+    size_t hdr_adjust = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
+    void *loader_start = (void *) loader_phdr->p_vaddr + hdr_adjust;
+    size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
+    DEBUG("hello????\n");
+
+    if (encryption_algorithm == AES) {
+        // 拿到AES的真实KEY
+        struct aes_key actual_key;
+        loader_outer_key_deobfuscate_aes(&obfuscated_key, &actual_key, loader_start, loader_size);
+        DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
+        decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr, &(packed_bin_phdr->p_memsz), &actual_key);
+    }
+    // } else if (encryption_algorithm == DES) {
+    //     struct des_key actual_key;
+    //     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key, loader_start, loader_size);
+    //     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
+    //     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr, &(packed_bin_phdr->p_memsz), &actual_key);
+    // } else if (encryption_algorithm == RC4) {
+    //     struct rc4_key actual_key;
+    //     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key, loader_start, loader_size);
+    //     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
+    //     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_memsz), &actual_key);
+    // } else if (encryption_algorithm == TDEA) {
+    //     struct des3_key actual_key;
+    //     loader_outer_key_deobfuscate(&obfuscated_key, &actual_key, loader_start, loader_size);
+    //     DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
+    //     decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_memsz),&actual_key);
+    // }
+
 
     /* Entry point for ld.so if this is not a statically linked binary, otherwise
      * map_elf_from_mem will not touch this and it will be set below. */
     void *interp_entry = NULL;
     void *interp_base = NULL;
+    // 对解密后的文件进行处理
     void *load_addr = map_elf_from_mem(packed_bin_ehdr, &interp_entry, &interp_base);
     DEBUG_FMT("binary base address is %p", load_addr);
 
     void *program_entry = packed_bin_ehdr->e_type == ET_EXEC ?
                           (void *) packed_bin_ehdr->e_entry : load_addr + packed_bin_ehdr->e_entry;
+    // 在命令函参数之上有环境变量，环境变量之上就是辅助向量，存了一些键值对，提供给动态链接器?
+    // 修改了程序入口地址，program header addr，interpreter base和program header number
     setup_auxv(argv,
                program_entry,
                (void *) (load_addr + packed_bin_ehdr->e_phoff),

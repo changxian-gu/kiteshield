@@ -41,7 +41,7 @@
  * the packer to copy the RC4 decryption key over the loader. */
 #define KEY_SIZE 16
 struct rc4_key {
-  uint8_t bytes[KEY_SIZE];
+  uint8_t bytes[16];
 } __attribute__((packed));
 
 struct des_key {
@@ -54,6 +54,13 @@ struct des3_key {
 
 struct aes_key {
   uint8_t bytes[16];
+} __attribute__((packed));
+
+// 用来存储key，保证这个数组能容纳最大长度的key
+struct key_placeholder {
+  uint8_t bytes[16];
+  char encryption;
+  char compression;
 } __attribute__((packed));
 
 /* Represents a function that has been encrypted/instrumented and that the
