@@ -18,6 +18,8 @@
 #include "packer/include/elfutils.h"
 // #include "common/include/des.h"
 #include "cipher/aes.h"
+#include "cipher/des.h"
+#include "cipher/des3.h"
 #include "cipher_modes/ecb.h"
 
 #include "loader/out/generated_loader_rt.h"
@@ -139,11 +141,12 @@ static int produce_output_elf(
      * passing decryption key and other info to loader), which is the first
      * sizeof(struct des_key) bytes of the loader code (guaranteed by the linker
      * script) */
-    // 跳过打包后的ELF头和两个prog header和placeholder的大小，正好到达loader的.text的第一个字节处
+    // 跳过打包后的ELF头和两个prog header和placeholder的大小，正好到达loader的.text的第一个字节处, KEY修改为64字节
     Elf64_Addr entry_vaddr = LOADER_ADDR +
                              sizeof(Elf64_Ehdr) +
                              (sizeof(Elf64_Phdr) * 2) +
-                             sizeof(struct key_placeholder);
+                             KEY_SIZE_AFTER_ALIGN;
+                             
     Elf64_Ehdr ehdr;
     ehdr.e_ident[EI_MAG0] = ELFMAG0;
     ehdr.e_ident[EI_MAG1] = ELFMAG1;
@@ -282,22 +285,22 @@ static void encrypt_memory_range_aes(struct aes_key *key, void *start, size_t le
 //     memcpy(start, out, actual_encrypt_len);
 // }
 
-// static void encrypt_memory_range_des(struct des_key *key, void *start, size_t len) {
-//     size_t key_len = sizeof(struct des_key);
-//     printf("aes key_len : %d\n", key_len);
-//     unsigned char* out = (unsigned char*)malloc((len) * sizeof(char));
-//     printf("before enc, len : %lu\n", len);
-//     // 使用DES加密后密文长度可能会大于明文长度怎么办?
-//     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
-//     unsigned long actual_encrypt_len = len - len % key_len;
-//     printf("actual encrypt len : %lu\n", actual_encrypt_len);
-//     if (actual_encrypt_len  == 0)
-//         return;
-//     AesContext aes_context;
-//     aesInit(&aes_context, key->bytes, key_len);
-//     ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
-//     memcpy(start, out, actual_encrypt_len);
-// }
+static void encrypt_memory_range_des(struct des_key *key, void *start, size_t len) {
+    size_t key_len = sizeof(struct des_key);
+    printf("des key_len : %d\n", key_len);
+    unsigned char* out = (unsigned char*) malloc(len);
+    printf("before enc, len : %lu\n", len);
+    // 使用DES加密后密文长度可能会大于明文长度怎么办?
+    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
+    unsigned long actual_encrypt_len = len - len % key_len;
+    printf("actual encrypt len : %lu\n", actual_encrypt_len);
+    if (actual_encrypt_len  == 0)
+        return;
+    DesContext des_context;
+    desInit(&des_context, key->bytes, key_len);
+    ecbEncrypt(DES_CIPHER_ALGO, &des_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+}
 
 // static void encrypt_memory_range_des3(struct des3_key *key, void *start, size_t len) {
 //     size_t key_len = sizeof(struct des3_key);
@@ -575,37 +578,42 @@ static int apply_outer_encryption(
         size_t loader_size) {
 
     if (encryption_algorithm == AES) {
+        printf("[Packer] Using AES...\n");
         struct aes_key key;
         CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        // 修改elf长度
         encrypt_memory_range_aes(&key, elf->start, elf->size);
         /* Obfuscate Key */
         struct aes_key obfuscated_key;
         obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
         info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
-        /* Copy over obfuscated key so the loader can decrypt */
         // 把混淆后的key写入loader
-        struct key_placeholder m_obfuscated_struct;
-        memcpy(m_obfuscated_struct.bytes, obfuscated_key.bytes, sizeof(obfuscated_key));
-        m_obfuscated_struct.encryption = AES;
-        m_obfuscated_struct.compression = ZSTD;
-        memcpy(loader_start, &m_obfuscated_struct, sizeof(struct key_placeholder));
+        struct key_placeholder m_key_placeholder;
+        memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
+        memcpy(m_key_placeholder.bytes, obfuscated_key.bytes, sizeof(obfuscated_key));
+        m_key_placeholder.encryption = AES;
+        m_key_placeholder.compression = ZSTD;
+        memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
+    } else if (encryption_algorithm == DES) {
+        printf("[Packer] Using DES...\n");
+        struct des_key key;
+        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_des(&key, elf->start, elf->size);
+        /* Obfuscate Key */
+        struct des_key obfuscated_key;
+        obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
+        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
+        // 把混淆后的key写入loader
+        struct key_placeholder m_key_placeholder;
+        memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
+        memcpy(m_key_placeholder.bytes, obfuscated_key.bytes, sizeof(obfuscated_key));
+        m_key_placeholder.encryption = DES;
+        m_key_placeholder.compression = ZSTD;
+        memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
     }
-    // } else if (encryption_algorithm == DES) {
-    //     struct des_key key;
-    //     CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
-    //     info("applying outer encryption with key %s", STRINGIFY_KEY(key));
-    //     /* Encrypt the actual binary */
-    //     // 修改elf长度
-    //     encrypt_memory_range_des(&key, elf->start, elf->size);
-    //     /* Obfuscate Key */
-    //     struct des_key obfuscated_key;
-    //     obf_deobf_outer_key(&key, &obfuscated_key, loader_start, loader_size);
-    //     info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
-    //     /* Copy over obfuscated key so the loader can decrypt */
-    //     *((struct des_key *) loader_start) = obfuscated_key;
     // } else if (encryption_algorithm == RC4) {
     //     struct rc4_key key;
     //     CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
@@ -735,7 +743,8 @@ int main(int argc, char *argv[]) {
     }
     input_path = argv[1];
     output_path = argv[4];
-    switch(atoi(argv[1])) {
+    printf("DEBUG: argv[2] : %d\n", atoi(argv[2]));
+    switch(atoi(argv[2])) {
         case 1:
             encryption_algorithm = RC4;
             break;
@@ -748,11 +757,7 @@ int main(int argc, char *argv[]) {
         case 4:
             encryption_algorithm = AES;
             break;
-        default:
-            encryption_algorithm = AES;
-            break;
     }
-
 
     /* Read ELF to be packed */
     info("reading input binary %s", input_path);
@@ -789,10 +794,10 @@ int main(int argc, char *argv[]) {
     }
 
     /* Fully strip binary */
-    if (full_strip(&elf) == -1) {
-        err("could not strip binary");
-        return -1;
-    }
+    // if (full_strip(&elf) == -1) {
+    //     err("could not strip binary");
+    //     return -1;
+    // }
 
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);
