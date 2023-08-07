@@ -14,7 +14,7 @@
 #define STRINGIFY_KEY(key) \
   ({ char buf[(sizeof((key)->bytes) * 2) + 1]; \
      char *buf_ptr = buf; \
-     for (int i = 0; i < KEY_SIZE; i++) { \
+     for (int i = 0; i < sizeof((key)->bytes); i++) { \
        uint8_t byte = (key)->bytes[i]; \
        if ((byte & 0xF0) == 0) { \
          (*buf_ptr++) = '0'; \

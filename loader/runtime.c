@@ -3,7 +3,6 @@
 
 #include "common/include/defs.h"
 #include "common/include/obfuscation.h"
-#include "common/include/rc4.h"
 // #include "common/include/des3.h"
 #include "cipher/aes.h"
 #include "cipher_modes/ecb.h"

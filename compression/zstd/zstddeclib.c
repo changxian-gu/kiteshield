@@ -96,7 +96,7 @@
 #define ZSTD_DEPS_MALLOC
 
 // #include <stdlib.h>
-#include "malloc.h"
+#include "./malloc.h"
 
 #define ZSTD_malloc(s) ks_malloc(s)
 #define ZSTD_calloc(n,s) ks_calloc((n), (s))

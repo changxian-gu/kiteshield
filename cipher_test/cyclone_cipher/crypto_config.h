@@ -128,7 +128,7 @@
 //RC2 support
 #define RC2_SUPPORT DISABLED
 //RC4 support
-#define RC4_SUPPORT DISABLED
+#define RC4_SUPPORT ENABLED
 //RC6 support
 #define RC6_SUPPORT DISABLED
 //CAST-128 support

@@ -1,10 +1,10 @@
 #include <elf.h>
 
 #include "common/include/defs.h"
-#include "common/include/rc4.h"
 #include "cipher/aes.h"
 #include "cipher/des.h"
 #include "cipher/des3.h"
+#include "cipher/rc4.h"
 #include "cipher_modes/ecb.h"
 #include "common/include/obfuscation.h"
 
@@ -14,7 +14,6 @@
 #include "loader/include/syscalls.h"
 #include "loader/include/anti_debug.h"
 #include "loader/include/string.h"
-#include "common/include/use_what_alogirthm.h"
 
 #include "compression/lzma/Lzma.h"
 // zstd解压的单文件实现，直接包含较为简单(待修正)
@@ -356,6 +355,53 @@ static void decrypt_packed_bin_des(
     ks_free(out);
 }
 
+
+static void decrypt_packed_bin_des3(
+        void *packed_bin_start,
+        size_t *packed_bin_size,
+        struct des3_key *key) {
+
+    DEBUG_FMT("DES3 decrypting binary with key %s", STRINGIFY_KEY(key));
+    DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
+    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
+
+    // DEBUG_FMT("open serial %d\n", serial_communication());
+
+    unsigned long t = *packed_bin_size - *packed_bin_size % sizeof(struct des3_key);
+    char* out = (char*)ks_malloc(t * sizeof(char));
+    DEBUG_FMT("the val : %d\n", *(char*)out);
+    Des3Context des3_context;
+    des3Init(&des3_context, key->bytes, sizeof(struct des3_key));
+    ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
+    DEBUG_FMT("the val : %d\n", *((char*)out));
+    memcpy(packed_bin_start, out, t);
+    DEBUG_FMT("decrypt success %d", 1);
+    ks_free(out);
+}
+
+static void decrypt_packed_bin_rc4(
+        void *packed_bin_start,
+        size_t *packed_bin_size,
+        struct rc4_key *key) {
+
+    DEBUG_FMT("RC4 decrypting binary with key %s", STRINGIFY_KEY(key));
+    DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
+    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
+
+    // DEBUG_FMT("open serial %d\n", serial_communication());
+
+    unsigned long t = *packed_bin_size - *packed_bin_size % sizeof(struct rc4_key);
+    char* out = (char*)ks_malloc(t * sizeof(char));
+    DEBUG_FMT("the val : %d\n", *(char*)out);
+    Rc4Context rc4_context;
+    rc4Init(&rc4_context, key->bytes, sizeof(struct rc4_key));
+    rc4Cipher(&rc4_context, packed_bin_start, out, t);
+    DEBUG_FMT("the val : %d\n", *((char*)out));
+    memcpy(packed_bin_start, out, t);
+    DEBUG_FMT("decrypt success %d", 1);
+    ks_free(out);
+}
+
 /* Convenience wrapper around obf_deobf_outer_key to automatically pass in
  * correct loader code offsets. */
 void loader_outer_key_deobfuscate(
@@ -386,7 +432,7 @@ void loader_outer_key_deobfuscate_aes(
         uint8_t* loader_bin,
         size_t loader_bin_size) {
 
-    __builtin_memcpy(new_key, old_key, sizeof(*new_key));
+    __builtin_memcpy(new_key, old_key->bytes, sizeof(*new_key));
 
     #ifdef NO_ANTIDEBUG
     return;
@@ -430,7 +476,7 @@ void loader_outer_key_deobfuscate_rc4(
         uint8_t* loader_bin,
         size_t loader_bin_size) {
 
-    __builtin_memcpy(new_key, old_key, sizeof(*new_key));
+    __builtin_memcpy(new_key, old_key->bytes, sizeof(*new_key));
 
     #ifdef NO_ANTIDEBUG
     return;
@@ -452,7 +498,7 @@ void loader_outer_key_deobfuscate_des3(
         uint8_t* loader_bin,
         size_t loader_bin_size) {
 
-    __builtin_memcpy(new_key, old_key, sizeof(*new_key));
+    __builtin_memcpy(new_key, old_key->bytes, sizeof(struct des3_key));
 
     #ifdef NO_ANTIDEBUG
     return;
@@ -464,7 +510,7 @@ void loader_outer_key_deobfuscate_des3(
     while (loader_index < loader_bin_size / 10) {
         new_key->bytes[0] ^= loader_bin[loader_index];
         loader_index++;
-        key_index = (key_index + 1) % sizeof(new_key->bytes);
+        key_index = (key_index + 1) % sizeof(struct des3_key);
     }
 }
 
@@ -576,12 +622,12 @@ void *load(void *entry_stacktop) {
         struct rc4_key actual_key;
         loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_memsz), &actual_key);
+        decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_memsz), &actual_key);
     } else if (encryption_algorithm == TDEA) {
         struct des3_key actual_key;
         loader_outer_key_deobfuscate_des3(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_memsz),&actual_key);
+        decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_memsz),&actual_key);
     }
     DEBUG("[LOADER] decrypt sucessfully");
 
