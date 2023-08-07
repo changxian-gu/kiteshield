@@ -28,15 +28,17 @@
 // include compression alogrithm
 #include "compression/lzma/Lzma.h"
 #include "compression/zstd/zstd.h"
+#include "compression/lzo/minilzo.h"
+#include "compression/ucl/include/ucl.h"
 
 /* Work-memory needed for compression. Allocate memory in units
  * of 'lzo_align_t' (instead of 'char') to make sure it is properly aligned.
  */
 
-// #define HEAP_ALLOC(var,size) \
-//     lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
+#define HEAP_ALLOC(var,size) \
+    lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
 
-// static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
+static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
 enum Encryption {
     RC4 = 1,
@@ -588,11 +590,10 @@ static int apply_outer_encryption(
         obf_deobf_outer_key_aes(&key, &obfuscated_key, loader_start, loader_size);
         info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
         // 把混淆后的key写入loader
-        struct key_placeholder m_key_placeholder;
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
         memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
         memcpy(m_key_placeholder.bytes, obfuscated_key.bytes, sizeof(obfuscated_key));
         m_key_placeholder.encryption = AES;
-        m_key_placeholder.compression = ZSTD;
         memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
     } else if (encryption_algorithm == DES) {
         printf("[Packer] Using DES...\n");
@@ -606,11 +607,10 @@ static int apply_outer_encryption(
         obf_deobf_outer_key_des(&key, &obfuscated_key, loader_start, loader_size);
         info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
         // 把混淆后的key写入loader
-        struct key_placeholder m_key_placeholder;
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
         memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
         memcpy(m_key_placeholder.bytes, obfuscated_key.bytes, sizeof(obfuscated_key));
         m_key_placeholder.encryption = DES;
-        m_key_placeholder.compression = ZSTD;
         memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
     } else if (encryption_algorithm == RC4) {
         printf("[Packer] Using RC4...\n");
@@ -625,11 +625,10 @@ static int apply_outer_encryption(
         obf_deobf_outer_key_rc4(&key, &obfuscated_key, loader_start, loader_size);
         info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
         // 把混淆后的key写入loader
-        struct key_placeholder m_key_placeholder;
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
         memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
         memcpy(m_key_placeholder.bytes, obfuscated_key.bytes, sizeof(obfuscated_key));
         m_key_placeholder.encryption = RC4;
-        m_key_placeholder.compression = ZSTD;
         memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
     } else if (encryption_algorithm == TDEA) {
         printf("[Packer] Using TDEA...\n");
@@ -644,11 +643,10 @@ static int apply_outer_encryption(
         obf_deobf_outer_key_des3(&key, &obfuscated_key, loader_start, loader_size);
         info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
         // 把混淆后的key写入loader
-        struct key_placeholder m_key_placeholder;
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
         memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
         memcpy(m_key_placeholder.bytes, obfuscated_key.bytes, sizeof(obfuscated_key));
         m_key_placeholder.encryption = TDEA;
-        m_key_placeholder.compression = ZSTD;
         memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
     }
     return 0;
@@ -716,28 +714,84 @@ static int full_strip(struct mapped_elf *elf) {
     return 0;
 }
 
-int apply_outer_compression(struct mapped_elf* elf) {
-    uint8_t* input = elf->start;
-    int size = elf->size;
-    hexdump(input, size);
+int apply_outer_compression(struct mapped_elf* elf, void* loader_start) {
+    if (compression_algorithm == ZSTD) {
+        printf("[Packer] Using ZSTD Compressing...\n");
+        uint8_t* input = elf->start;
+        int size = elf->size;
+        hexdump(input, size);
+        uint32_t compressedSize = ZSTD_compressBound(size);
+        uint8_t* compressedBlob = malloc(compressedSize);
+        compressedSize = ZSTD_compress(compressedBlob, compressedSize, input, size, 1);
+        if (compressedBlob) {
+            printf("Compressed: %d to %d\n", size, compressedSize);
+        } else {
+            printf("Nope, we screwed it\n");
+            return;
+        }
+        memcpy(elf->start, compressedBlob, compressedSize);
+        elf->size = compressedSize;
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
+        m_key_placeholder.compression = ZSTD;
+        memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
+    } else if (compression_algorithm == LZO) {
+        printf("[Packer] Using LZO Compressing...\n");
+        int r;
+        lzo_uint in_len;
+        lzo_uint out_len;
+        if (lzo_init() != LZO_E_OK)
+        {
+            printf( "internal error - lzo_init() failed !!!\n");
+            printf( "(this usually indicates a compiler bug - try recompiling\nwithout optimizations, and enable '-DLZO_DEBUG' for diagnostics)\n");
+            return 3;
+        }
+        in_len = elf->size;
+        out_len = in_len + in_len / 16 + 64 + 3;
 
-    uint32_t compressedSize = ZSTD_compressBound(size);
-    uint8_t* compressedBlob = malloc(compressedSize);
-    compressedSize = ZSTD_compress(compressedBlob, compressedSize, input, size, 1);
-    
-	if (compressedBlob) {
-		printf("Compressed: %d to %d\n", size, compressedSize);
-	} else {
-		printf("Nope, we screwed it\n");
-		return;
-	}
+        const unsigned char* in = elf->start;
+        uint8_t out[out_len];
 
-    // uint8_t decompressed_blob[size];
-    // int decompressed_size = size;
-    // decompressed_size = ZSTD_decompress(decompressed_blob, decompressed_size, compressedBlob, compressedSize);
-
-    memcpy(elf->start, compressedBlob, compressedSize);
-    elf->size = compressedSize;
+        r = lzo1x_1_compress(in, in_len, out, &out_len, wrkmem);
+        if (r == LZO_E_OK) {
+            printf( "compressed %lu bytes into %lu bytes\n",
+                (unsigned long) in_len, (unsigned long) out_len);
+        } else {
+            /* this should NEVER happen */
+            printf( "internal error - compression failed: %d\n", r);
+            return 2;
+        }
+        /* check for an incompressible block */
+        if (out_len >= in_len) {
+            printf( "This block contains incompressible data.\n");
+            return 0;
+        }
+        memcpy(elf->start, out, out_len);
+        elf->size = out_len;
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
+        m_key_placeholder.compression = LZO;
+        memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
+    } else if (compression_algorithm == LZMA) {
+        printf("[Packer] Using LZMA Compressing...\n");
+        uint8_t* input = elf->start;
+        int size = elf->size;
+        hexdump(input, size);
+        uint32_t compressedSize;
+        uint8_t* compressedBlob = lzmaCompress(input, size, &compressedSize);
+        if (compressedBlob) {
+            printf("Compressed:\n");
+            hexdump(compressedBlob, compressedSize);
+        } else {
+            printf("Nope, we screwed it\n");
+            return;
+        }
+        memcpy(elf->start, compressedBlob, compressedSize);
+        elf->size = compressedSize;
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
+        m_key_placeholder.compression = LZMA;
+        memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
+    } else if (compression_algorithm == UCL) {
+        ;
+    }
     return 0;
 }
 
@@ -766,6 +820,21 @@ int main(int argc, char *argv[]) {
             break;
         case 4:
             encryption_algorithm = AES;
+            break;
+    }
+
+    switch (atoi(argv[3])) {
+        case 1:
+            compression_algorithm = LZMA;
+            break;
+        case 2:
+            compression_algorithm = LZO;
+            break;
+        case 3:
+            compression_algorithm = UCL;
+            break;
+        case 4:
+            compression_algorithm = ZSTD;
             break;
     }
 
@@ -809,6 +878,11 @@ int main(int argc, char *argv[]) {
     //     return -1;
     // }
 
+    ret = apply_outer_compression(&elf, loader);
+    if (ret != 0) {
+        printf("[compression]: something wrong!\n");
+    }
+
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);
     if (ret == -1) {
@@ -816,11 +890,6 @@ int main(int argc, char *argv[]) {
         return -1;
     }
     verbose("packed app data : %d %d %d %d\n", *(unsigned char*)elf.start, *((unsigned char*)elf.start + 1),*((unsigned char*)elf.start + 2),*((unsigned char*)elf.start + 3));
-
-    ret = apply_outer_compression(&elf);
-    if (ret != 0) {
-        printf("[compression]: something wrong!\n");
-    }
 
 
     /* Write output ELF */

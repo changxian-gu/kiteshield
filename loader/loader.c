@@ -16,8 +16,11 @@
 #include "loader/include/string.h"
 
 #include "compression/lzma/Lzma.h"
+#include "compression/lzo/minilzo.h"
+#include "compression/zstd/zstd.h"
+#include "compression/ucl/include/ucl.h"
 // zstd解压的单文件实现，直接包含较为简单(待修正)
-#include "compression/zstd/zstddeclib.c"
+// #include "compression/zstd/zstddeclib.c"
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1 << PAGE_SHIFT)
@@ -420,7 +423,7 @@ void loader_outer_key_deobfuscate(
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
     unsigned int key_index = 0;
     while (loader_index < loader_bin_size / 10) {
-        new_key->bytes[0] ^= loader_bin[loader_index];
+        new_key->bytes[key_index] ^= loader_bin[loader_index];
         loader_index++;
         key_index = (key_index + 1) % sizeof(new_key->bytes);
     }
@@ -442,7 +445,7 @@ void loader_outer_key_deobfuscate_aes(
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
     unsigned int key_index = 0;
     while (loader_index < loader_bin_size / 10) {
-        new_key->bytes[0] ^= loader_bin[loader_index];
+        new_key->bytes[key_index] ^= loader_bin[loader_index];
         loader_index++;
         key_index = (key_index + 1) % sizeof(new_key->bytes);
     }
@@ -464,7 +467,7 @@ void loader_outer_key_deobfuscate_des(
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
     unsigned int key_index = 0;
     while (loader_index < loader_bin_size / 10) {
-        new_key->bytes[0] ^= loader_bin[loader_index];
+        new_key->bytes[key_index] ^= loader_bin[loader_index];
         loader_index++;
         key_index = (key_index + 1) % sizeof(new_key->bytes);
     }
@@ -486,7 +489,7 @@ void loader_outer_key_deobfuscate_rc4(
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
     unsigned int key_index = 0;
     while (loader_index < loader_bin_size / 10) {
-        new_key->bytes[0] ^= loader_bin[loader_index];
+        new_key->bytes[key_index] ^= loader_bin[loader_index];
         loader_index++;
         key_index = (key_index + 1) % sizeof(new_key->bytes);
     }
@@ -508,7 +511,7 @@ void loader_outer_key_deobfuscate_des3(
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
     unsigned int key_index = 0;
     while (loader_index < loader_bin_size / 10) {
-        new_key->bytes[0] ^= loader_bin[loader_index];
+        new_key->bytes[key_index] ^= loader_bin[loader_index];
         loader_index++;
         key_index = (key_index + 1) % sizeof(struct des3_key);
     }
@@ -589,14 +592,7 @@ void *load(void *entry_stacktop) {
 
     DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
-    // zstd decompression
-    uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
-    uint32_t compressedSize = packed_bin_phdr->p_filesz;
-    uint32_t decompressedSize = packed_bin_phdr->p_memsz;
-    uint8_t* decompressedBlob = ks_malloc(decompressedSize);
-    DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
-    decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize, compressedBlob, compressedSize);
-    memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+
 
 
     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
@@ -606,30 +602,73 @@ void *load(void *entry_stacktop) {
     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
 
     if (encryption_algorithm == AES) {
-        DEBUG("[LOADER] Using AES");
+        DEBUG("[LOADER] Using AES Decrypting...");
         // 拿到AES的真实KEY
         struct aes_key actual_key;
         loader_outer_key_deobfuscate_aes(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr, &(packed_bin_phdr->p_memsz), &actual_key);
+        decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr, &(packed_bin_phdr->p_filesz), &actual_key);
     } else if (encryption_algorithm == DES) {
-        DEBUG("[LOADER] Using DES");
+        DEBUG("[LOADER] Using DES Decrypting...");
         struct des_key actual_key;
         loader_outer_key_deobfuscate_des(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, &(packed_bin_phdr->p_memsz), &actual_key);
+        decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, &(packed_bin_phdr->p_filesz), &actual_key);
     } else if (encryption_algorithm == RC4) {
+        DEBUG("[LOADER] Using RC4 Decrypting...");
         struct rc4_key actual_key;
         loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_memsz), &actual_key);
+        decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_filesz), &actual_key);
     } else if (encryption_algorithm == TDEA) {
+        DEBUG("[LOADER] Using TDEA Decrypting...");
         struct des3_key actual_key;
         loader_outer_key_deobfuscate_des3(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_memsz),&actual_key);
+        decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_filesz),&actual_key);
     }
     DEBUG("[LOADER] decrypt sucessfully");
+
+    if (compression_algorithm == ZSTD) {
+        DEBUG("[LOADER] Using ZSTD Decompressing...");
+        uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+        uint32_t compressedSize = packed_bin_phdr->p_filesz;
+        uint32_t decompressedSize = packed_bin_phdr->p_memsz;
+        uint8_t* decompressedBlob = ks_malloc(decompressedSize);
+        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
+        decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize, compressedBlob, compressedSize);
+        memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+    } else if (compression_algorithm == LZO) {
+        DEBUG("[LOADER] Using LZO Decompressing...");
+        uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+        uint32_t compressedSize = packed_bin_phdr->p_filesz;
+        uint32_t decompressedSize = packed_bin_phdr->p_memsz;
+        uint8_t* decompressedBlob = ks_malloc(decompressedSize);
+        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
+        int ret = decompress_bin((uint8_t *) packed_bin_phdr->p_vaddr, compressedBlob, decompressedBlob, &decompressedSize);
+        if (ret != 0) {
+            ks_printf(1, "[decompression]: something wrong!\n");
+        }
+        memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+    } else if (compression_algorithm == LZMA) {
+        DEBUG("[LOADER] Using LZMA Decompressing...");
+        // lzma decompression
+        uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+        uint32_t compressedSize = packed_bin_phdr->p_filesz;
+        uint32_t decompressedSize;
+        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
+        uint8_t* decompressedBlob = lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
+        if (decompressedBlob) {
+            DEBUG("Decompressed:\n");
+            hexdump(decompressedBlob, decompressedSize);
+        } else {
+            DEBUG("Nope, we screwed it (part 2)\n");
+            return;
+        }
+        memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+    } else if (compression_algorithm == UCL) {
+        ;
+    }
 
 
     /* Entry point for ld.so if this is not a statically linked binary, otherwise

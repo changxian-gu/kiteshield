@@ -1,11 +1,11 @@
 # CFLAGS_COMMON = -Wall -std=gnu99 -fno-pie -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -c -I ..
-CFLAGS_COMMON = -std=gnu99 -fno-pie -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -c -I .. -I../cyclone_cipher -I../cyclone_cipher/common
+CFLAGS_COMMON = -std=gnu99 -fno-pie -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -c -I .. -I../cyclone_cipher -I../cyclone_cipher/common -I../compression/lzma -I../compression/lzo
 LDFLAGS = -no-pie 
 LIB = -L../cyclone_cipher -lcrypto
 
 CFLAGS = $(CFLAGS_COMMON)
 
-SRCS = $(wildcard *.[c,S] ../common/*.c)
+SRCS = $(wildcard *.[c,S] ../common/*.c ../compression/zstd/zstddeclib.c ../compression/lzma/*.c ../compression/lzo/*.c)
 OBJS_RT = $(addprefix out/rt/, $(addsuffix .o, $(basename $(notdir $(SRCS:.c=.o)))))
 OBJS_NO_RT = $(addprefix out/no_rt/, $(addsuffix .o, $(basename $(notdir $(SRCS:.c=.o)))))
 
@@ -44,7 +44,13 @@ out/rt/%.o: %.c
 out/rt/%.o: ../common/%.c
 	$(CC) -DUSE_RUNTIME $(CFLAGS) $< -o $@
 
+out/rt/%.o: ../compression/zstd/%.c
+	$(CC) -DUSE_RUNTIME $(CFLAGS) $< -o $@
+
 out/rt/%.o: ../compression/lzma/%.c
+	$(CC) -DUSE_RUNTIME $(CFLAGS) $< -o $@
+
+out/rt/%.o: ../compression/lzo/%.c
 	$(CC) -DUSE_RUNTIME $(CFLAGS) $< -o $@
 
 out/rt/%.o: %.S
@@ -56,7 +62,13 @@ out/no_rt/%.o: %.c
 out/no_rt/%.o: ../common/%.c
 	$(CC) $(CFLAGS) $< -o $@
 
+out/no_rt/%.o: ../compression/zstd/%.c
+	$(CC) $(CFLAGS) $< -o $@
+
 out/no_rt/%.o: ../compression/lzma/%.c
+	$(CC) $(CFLAGS) $< -o $@
+
+out/no_rt/%.o: ../compression/lzo/%.c
 	$(CC) $(CFLAGS) $< -o $@
 
 out/no_rt/%.o: %.S
