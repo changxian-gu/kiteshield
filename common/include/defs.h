@@ -73,7 +73,8 @@ struct function {
   uint32_t len;
 
   /* Key that this function's code is encrypted with */
-  struct aes_key key;
+  // struct aes_key key;
+  struct rc4_key key;
 
 /* For logging purposes in debug mode */
 #ifdef DEBUG_OUTPUT

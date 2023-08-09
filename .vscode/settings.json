@@ -37,7 +37,14 @@
         "lzma.h": "c",
         "*.ch": "c",
         "minilzo.h": "c",
-        "elf_auxv.h": "c"
+        "elf_auxv.h": "c",
+        "ratio": "c",
+        "system_error": "c",
+        "array": "c",
+        "functional": "c",
+        "tuple": "c",
+        "utility": "c",
+        "chrono": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

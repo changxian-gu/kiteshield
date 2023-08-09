@@ -12,6 +12,7 @@
 
 #include "common/include/obfuscation.h"
 #include "common/include/defs.h"
+#include "common/include/inner_rc4.h"
 #include "packer/include/elfutils.h"
 
 #include "loader/out/generated_loader_rt.h"
@@ -235,20 +236,14 @@ static int get_random_bytes(void *buf, size_t len) {
 }
 
 static void encrypt_memory_range(struct aes_key *key, void *start, size_t* len) {
-    size_t key_len = sizeof(struct aes_key);
-    printf("aes key_len : %d\n", key_len);
-    unsigned char* out = (unsigned char*)malloc((*len) * sizeof(char));
-    printf("before enc, len : %lu\n", *len);
-    // 使用DES加密后密文长度可能会大于明文长度怎么办?
-    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
-    unsigned long actual_encrypt_len = *len - *len % key_len;
-    printf("actual encrypt len : %lu\n", actual_encrypt_len);
-    if (actual_encrypt_len  == 0)
-        return;
-    AesContext aes_context;
-    aesInit(&aes_context, key->bytes, key_len);
-    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
-    memcpy(start, out, actual_encrypt_len);
+    struct rc4_state rc4;
+    rc4_init(&rc4, key->bytes, sizeof(key->bytes));
+
+    uint8_t *curr = start;
+    for (size_t i = 0; i < len; i++) {
+        *curr = *curr ^ rc4_get_byte(&rc4);
+        curr++;
+    }
 }
 
 
@@ -381,16 +376,13 @@ static int process_func(
         struct runtime_info *rt_info,
         struct function *func_arr,
         struct trap_point *tp_arr) {
-    // 拿到当前函数的开始地址
     uint8_t *func_start = elf_get_sym_location(elf, func_sym);
     uint64_t base_addr = get_base_addr(elf->ehdr);
-    // 拿到当前要处理的函数
     struct function *fcn = &func_arr[rt_info->nfuncs];
 
     fcn->id = rt_info->nfuncs;
     fcn->start_addr = base_addr + func_sym->st_value;
     fcn->len = func_sym->st_size;
-    // 随机生成用来加密函数的key
     CK_NEQ_PERROR(get_random_bytes(fcn->key.bytes, sizeof(fcn->key.bytes)), -1);
 #ifdef DEBUG_OUTPUT
     strncpy(fcn->name, elf_get_sym_name(elf, func_sym), sizeof(fcn->name));
@@ -405,14 +397,10 @@ static int process_func(
             (struct trap_point *) &tp_arr[rt_info->ntraps++];
     tp->addr = base_addr + func_sym->st_value;
     tp->type = TP_FCN_ENTRY;
-    tp->fcn_i = rt_info->nfuncs;
-    tp->plain_value = *func_start;
-
-    size_t size_need_to_enc = fcn->len;
-    encrypt_memory_range(&fcn->key, func_start, &size_need_to_enc);
-    
-    // 记录下第一个字节原来的值，下面用INT3替换掉
     tp->value = *func_start;
+    tp->fcn_i = rt_info->nfuncs;
+
+    encrypt_memory_range(&fcn->key, func_start, func_sym->st_size);
 
     *func_start = INT3;
 
@@ -428,10 +416,8 @@ static int process_func(
 static int apply_inner_encryption(
         struct mapped_elf *elf,
         struct runtime_info **rt_info) {
-    info("applying inner encryption");
-
-    /**
-     * 如果section的偏移为0，符号表为空，则无法内部加密
+   /**
+     * 如果section的偏移为0，符号表为空，则无法加密内部加密
      */
     if (elf->ehdr->e_shoff == 0 || !elf->symtab) {
         info("binary is stripped, not applying inner encryption");
@@ -454,7 +440,6 @@ static int apply_inner_encryption(
      *      = 1M * 16
      *
      */
-    // 为function数组和trap_point数组分配空间
     struct function *fcn_arr;
     CK_NEQ_PERROR(fcn_arr = malloc(1 << 24), NULL);
 
@@ -464,7 +449,6 @@ static int apply_inner_encryption(
     // 遍历符号表
     ELF_FOR_EACH_SYMBOL(elf, sym) {
         // 加密func
-        // 判断symbol是否为func
         if (ELF64_ST_TYPE(sym->st_info) != STT_FUNC)
             continue;
 
@@ -478,7 +462,6 @@ static int apply_inner_encryption(
          */
         uint64_t base = get_base_addr(elf->ehdr);
         struct function *alias = NULL;
-        // 判断当前func symbol是否已经被处理
         for (size_t i = 0; i < (*rt_info)->nfuncs; i++) {
             struct function *fcn = &fcn_arr[i];
 
@@ -531,7 +514,6 @@ static int apply_inner_encryption(
          *  in order to support encrypting the small amount of hand coded asm
          *  functions in glibc that are like this.
          */
-        // 看一下加密的函数是不是在要加密的函数范围里面
         if (!elf_sym_in_text(elf, sym)) {
             verbose("not encrypting function %s as it's not in .text",
                     elf_get_sym_name(elf, sym));
@@ -544,9 +526,6 @@ static int apply_inner_encryption(
             continue;
         }
 
-        /* We need to do this decoding down here as if we don't, sym->st_value
-         * could be 0.
-         */
         if (process_func(elf, sym, *rt_info, fcn_arr, tp_arr) == -1) {
             err("error instrumenting function %s", elf_get_sym_name(elf, sym));
             return -1;
@@ -828,7 +807,7 @@ int apply_outer_compression(struct mapped_elf* elf, void* loader_start) {
 
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
-    int layer_one_only = 1;
+    int layer_one_only = 0;
     int c;
     int ret;
 

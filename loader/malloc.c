@@ -72,8 +72,8 @@ int ks_malloc_get_n_blocks() {
 }
 
 void *ks_malloc(size_t size) {
-    DIE_IF(size == 0, "malloc of size 0, likely loader bug");
-
+    if (size == 0)
+        return NULL;
     struct block *curr = heap_base;
     struct block *target = NULL;
     while (curr != NULL) {
