@@ -312,18 +312,18 @@ static void setup_auxv(
     replace_auxv_ent(auxv_start, AT_PHNUM, phnum);
 }
 
-static void decrypt_packed_bin(
+static void decrypt_packed_bin_aes(
         void *packed_bin_start,
-        size_t *packed_bin_size,
+        size_t packed_bin_size,
         struct aes_key *key) {
 
     DEBUG_FMT("AES decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
+    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
     DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
-
-    unsigned long t = *packed_bin_size - *packed_bin_size % sizeof(struct aes_key);
+    // 只解密密钥整数倍的长度的密文
+    unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct aes_key);
     char* out = (char*)ks_malloc(t * sizeof(char));
     DEBUG_FMT("the val : %d\n", *(char*)out);
     AesContext aes_context;
@@ -337,16 +337,16 @@ static void decrypt_packed_bin(
 
 static void decrypt_packed_bin_des(
         void *packed_bin_start,
-        size_t *packed_bin_size,
+        size_t packed_bin_size,
         struct des_key *key) {
 
     DEBUG_FMT("DES decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
+    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
     DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
 
-    unsigned long t = *packed_bin_size - *packed_bin_size % sizeof(struct des_key);
+    unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct des_key);
     char* out = (char*)ks_malloc(t * sizeof(char));
     DEBUG_FMT("the val : %d\n", *(char*)out);
     DesContext des_context;
@@ -361,16 +361,16 @@ static void decrypt_packed_bin_des(
 
 static void decrypt_packed_bin_des3(
         void *packed_bin_start,
-        size_t *packed_bin_size,
+        size_t packed_bin_size,
         struct des3_key *key) {
 
     DEBUG_FMT("DES3 decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
+    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
     DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
 
-    unsigned long t = *packed_bin_size - *packed_bin_size % sizeof(struct des3_key);
+    unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct des3_key);
     char* out = (char*)ks_malloc(t * sizeof(char));
     DEBUG_FMT("the val : %d\n", *(char*)out);
     Des3Context des3_context;
@@ -384,16 +384,16 @@ static void decrypt_packed_bin_des3(
 
 static void decrypt_packed_bin_rc4(
         void *packed_bin_start,
-        size_t *packed_bin_size,
+        size_t packed_bin_size,
         struct rc4_key *key) {
 
     DEBUG_FMT("RC4 decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", *packed_bin_size);
+    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
     DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
 
-    unsigned long t = *packed_bin_size - *packed_bin_size % sizeof(struct rc4_key);
+    unsigned long t = packed_bin_size;
     char* out = (char*)ks_malloc(t * sizeof(char));
     DEBUG_FMT("the val : %d\n", *(char*)out);
     Rc4Context rc4_context;
@@ -517,10 +517,6 @@ void loader_outer_key_deobfuscate_des3(
     }
 }
 
-int decompress_bin(const uint8_t* in, uint32_t in_len, uint8_t* out, uint32_t* out_len) {
-    return 0;
-}
-
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
     ks_malloc_init();
@@ -607,25 +603,25 @@ void *load(void *entry_stacktop) {
         struct aes_key actual_key;
         loader_outer_key_deobfuscate_aes(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin((void *) packed_bin_phdr->p_vaddr, &(packed_bin_phdr->p_filesz), &actual_key);
+        decrypt_packed_bin_aes((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == DES) {
         DEBUG("[LOADER] Using DES Decrypting...");
         struct des_key actual_key;
         loader_outer_key_deobfuscate_des(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, &(packed_bin_phdr->p_filesz), &actual_key);
+        decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == RC4) {
         DEBUG("[LOADER] Using RC4 Decrypting...");
         struct rc4_key actual_key;
         loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_filesz), &actual_key);
+        decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == TDEA) {
         DEBUG("[LOADER] Using TDEA Decrypting...");
         struct des3_key actual_key;
         loader_outer_key_deobfuscate_des3(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr,&(packed_bin_phdr->p_filesz),&actual_key);
+        decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz,&actual_key);
     }
     DEBUG("[LOADER] decrypt sucessfully");
 
@@ -645,11 +641,14 @@ void *load(void *entry_stacktop) {
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
         uint8_t* decompressedBlob = ks_malloc(decompressedSize);
         DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
-        int ret = decompress_bin((uint8_t *) packed_bin_phdr->p_vaddr, compressedBlob, decompressedBlob, &decompressedSize);
+        int ret = lzo1x_decompress(compressedBlob, compressedSize, decompressedBlob, &decompressedSize, NULL);
+        DEBUG_FMT("Now the decompressSize is %d", decompressedSize);
         if (ret != 0) {
             ks_printf(1, "[decompression]: something wrong!\n");
         }
         memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+        ks_free(decompressedBlob);
+        DEBUG("LZO FINISHED");
     } else if (compression_algorithm == LZMA) {
         DEBUG("[LOADER] Using LZMA Decompressing...");
         // lzma decompression

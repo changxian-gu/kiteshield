@@ -277,7 +277,7 @@ static void encrypt_memory_range_rc4(struct rc4_key *key, void *start, size_t le
     printf("rc4 key_len : %d\n", key_len);
     unsigned char* out = (unsigned char*)malloc((len) * sizeof(char));
     printf("before enc, len : %lu\n", len);
-    unsigned long actual_encrypt_len = len - len % key_len;
+    unsigned long actual_encrypt_len = len;
     printf("actual encrypt len : %lu\n", actual_encrypt_len);
     if (actual_encrypt_len  == 0)
         return;
@@ -750,7 +750,7 @@ int apply_outer_compression(struct mapped_elf* elf, void* loader_start) {
         out_len = in_len + in_len / 16 + 64 + 3;
 
         const unsigned char* in = elf->start;
-        uint8_t out[out_len];
+        uint8_t* out = malloc(out_len);
 
         r = lzo1x_1_compress(in, in_len, out, &out_len, wrkmem);
         if (r == LZO_E_OK) {
@@ -767,6 +767,7 @@ int apply_outer_compression(struct mapped_elf* elf, void* loader_start) {
             return 0;
         }
         memcpy(elf->start, out, out_len);
+        free(out);
         elf->size = out_len;
         struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
         m_key_placeholder.compression = LZO;
