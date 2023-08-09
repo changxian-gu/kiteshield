@@ -1,10 +1,12 @@
-CFLAGS_COMMON = -Wall -std=gnu99 -I .. -I../cyclone_cipher -I../cyclone_cipher/common -I../compression/lzma -I../compression/lzo
+CFLAGS_COMMON = -Wall -std=gnu99 -I .. -I../cyclone_cipher -I../cyclone_cipher/common -I../compression/lzma -I../compression/lzo -I../compression/ucl \
+				-I../compression/ucl/include -I../compression/ucl/src
 # CFLAGS_COMMON = -Wall -Werror -std=gnu99 -I ..
 CFLAGS = $(CFLAGS_COMMON)
+# 目前zstd算法的外壳支持使用zstd库
 LDFLAGS = -Lbddisasm/bin/x64/Release -static -L../compression/zstd/ -lzstd
 LIB = -L../cyclone_cipher -lcrypto
 
-SRCS = $(wildcard *.c ../common/*.c ../loader/malloc.c ../loader/syscalls.c ../loader/debug.c ../loader/string.c ../compression/lzma/*.c ../compression/lzo/*.c)
+SRCS = $(wildcard *.c ../common/*.c ../loader/malloc.c ../loader/syscalls.c ../loader/debug.c ../loader/string.c ../compression/lzma/*.c ../compression/lzo/*.c ../compression/ucl/src/*.c)
 
 OBJS = $(addprefix ./obj/, $(notdir $(SRCS:.c=.o)))
 BIN_NAME = kiteshield
@@ -37,6 +39,9 @@ obj/%.o: ../compression/lzma/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 obj/%.o: ../compression/lzo/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+obj/%.o: ../compression/ucl/src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:

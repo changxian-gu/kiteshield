@@ -10,22 +10,20 @@
 #include <stdbool.h>
 #include <unistd.h>
 
-//#include "bddisasm.h"
-
 #include "common/include/obfuscation.h"
 #include "common/include/defs.h"
 #include "packer/include/elfutils.h"
-// #include "common/include/des.h"
+
+#include "loader/out/generated_loader_rt.h"
+#include "loader/out/generated_loader_no_rt.h"
+
+// include encryption headers
 #include "cipher/aes.h"
 #include "cipher/des.h"
 #include "cipher/des3.h"
 #include "cipher/rc4.h"
 #include "cipher_modes/ecb.h"
-
-#include "loader/out/generated_loader_rt.h"
-#include "loader/out/generated_loader_no_rt.h"
-
-// include compression alogrithm
+// include compression headers
 #include "compression/lzma/Lzma.h"
 #include "compression/zstd/zstd.h"
 #include "compression/lzo/minilzo.h"
@@ -792,7 +790,38 @@ int apply_outer_compression(struct mapped_elf* elf, void* loader_start) {
         m_key_placeholder.compression = LZMA;
         memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
     } else if (compression_algorithm == UCL) {
-        ;
+        printf("[Packer] Using UCL Compressing...\n");
+        int level = 5;
+        uint8_t* input = elf->start;
+        uint32_t size = elf->size;
+        uint32_t compressedSize = size + size / 8 + 256;
+        uint8_t* compressedBlob = ucl_malloc(compressedSize);
+        if (ucl_init() != UCL_E_OK)
+        {
+            ks_printf(1, "internal error - ucl_init() failed !!!\n");
+            return 1;
+        }
+        int r = ucl_nrv2b_99_compress(input, size, compressedBlob, &compressedSize, NULL, level, NULL, NULL);
+        if (r == UCL_E_OUT_OF_MEMORY)
+        {
+            ks_printf(1, "out of memory in compress\n");
+            return 3;
+        }
+        if (r == UCL_E_OK)
+            ks_printf(1, "compressed %d bytes into %d bytes\n", (unsigned long) size, (unsigned long) compressedSize);
+
+        /* check for an incompressible block */
+        if (compressedSize >= size)
+        {
+            ks_printf(1, "This block contains incompressible data.\n");
+            return 0;
+        }
+        memcpy(elf->start, compressedBlob, compressedSize);
+        ucl_free(compressedBlob);
+        elf->size = compressedSize;
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
+        m_key_placeholder.compression = UCL;
+        memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
     }
     return 0;
 }

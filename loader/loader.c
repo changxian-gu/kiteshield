@@ -1,13 +1,7 @@
 #include <elf.h>
-
 #include "common/include/defs.h"
-#include "cipher/aes.h"
-#include "cipher/des.h"
-#include "cipher/des3.h"
-#include "cipher/rc4.h"
-#include "cipher_modes/ecb.h"
-#include "common/include/obfuscation.h"
 
+#include "common/include/obfuscation.h"
 #include "loader/include/types.h"
 #include "loader/include/debug.h"
 #include "loader/include/elf_auxv.h"
@@ -15,12 +9,18 @@
 #include "loader/include/anti_debug.h"
 #include "loader/include/string.h"
 
+// include encryption headers
+#include "cipher/aes.h"
+#include "cipher/des.h"
+#include "cipher/des3.h"
+#include "cipher/rc4.h"
+#include "cipher_modes/ecb.h"
+
+// include compression headers
 #include "compression/lzma/Lzma.h"
 #include "compression/lzo/minilzo.h"
 #include "compression/zstd/zstd.h"
 #include "compression/ucl/include/ucl.h"
-// zstd解压的单文件实现，直接包含较为简单(待修正)
-// #include "compression/zstd/zstddeclib.c"
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1 << PAGE_SHIFT)
@@ -666,7 +666,15 @@ void *load(void *entry_stacktop) {
         }
         memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
     } else if (compression_algorithm == UCL) {
-        ;
+        DEBUG("[LOADER] Using UCL Decompressing...");
+        uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+        uint32_t compressedSize = packed_bin_phdr->p_filesz;
+        uint32_t decompressedSize = packed_bin_phdr->p_memsz;
+        uint8_t* decompressedBlob = ks_malloc(decompressedSize);
+        int r = ucl_nrv2b_decompress_8(compressedBlob, compressedSize, decompressedBlob, &decompressedSize, NULL);
+        if (r != UCL_E_OK)
+            DEBUG("UCL DECOMPRESS ERROR!!!\n");
+        memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
     }
 
 

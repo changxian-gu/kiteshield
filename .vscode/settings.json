@@ -36,7 +36,8 @@
         "lzfind.h": "c",
         "lzma.h": "c",
         "*.ch": "c",
-        "minilzo.h": "c"
+        "minilzo.h": "c",
+        "elf_auxv.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
