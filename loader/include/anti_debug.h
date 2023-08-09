@@ -26,6 +26,8 @@ static const char *nextline(const char *curr_line) {
  * Always inline this function so that a reverse engineer doesn't have to
  * simply neuter a single function in the compiled code to defeat calls to it
  * everywhere. */
+// 使用内联，防止破解者修改这个函数的逻辑就能绕过
+// linux中status中有个字段TracerPid，用来标识attach自己的pid
 static inline int __attribute__((always_inline)) antidebug_proc_check_traced() {
 #ifdef NO_ANTIDEBUG
     return 0;

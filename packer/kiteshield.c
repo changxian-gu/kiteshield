@@ -42,15 +42,16 @@ static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
 enum Encryption {
     RC4 = 1,
-    DES,
-    TDEA,
-    AES
+    DES = 2,
+    TDEA = 3,
+    AES = 4
 };
+
 enum Compression {
     LZMA = 1,
-    LZO,
-    UCL,
-    ZSTD
+    LZO = 2,
+    UCL = 3,
+    ZSTD = 4
 };
 
 enum Encryption encryption_algorithm = AES;
