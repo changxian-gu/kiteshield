@@ -11,6 +11,7 @@ for interface in $network_interfaces; do
     mac_address=$(cat "/sys/class/net/$interface/address")
     # 打印网卡名称和MAC地址
     echo "$interface_name"
+    echo -n "-"
     echo "$mac_address"
 done
 

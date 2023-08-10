@@ -105,9 +105,6 @@ struct trap_point {
    * execute the original instruction */
   // 加密后的字节
   uint8_t value;
-  // 加密前的字节
-  uint8_t plain_value;
-
   /* Index into the function array for the containing function */
   int fcn_i;
 } __attribute__((packed));

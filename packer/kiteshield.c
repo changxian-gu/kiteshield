@@ -883,10 +883,10 @@ int main(int argc, char *argv[]) {
     }
 
     /* Fully strip binary */
-    // if (full_strip(&elf) == -1) {
-    //     err("could not strip binary");
-    //     return -1;
-    // }
+    if (full_strip(&elf) == -1) {
+        err("could not strip binary");
+        return -1;
+    }
 
     ret = apply_outer_compression(&elf, loader);
     if (ret != 0) {
