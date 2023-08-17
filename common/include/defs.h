@@ -59,7 +59,8 @@ struct aes_key {
 
 // 用来存储key，保证这个数组能容纳最大长度的key
 struct key_placeholder {
-  uint8_t bytes[78];
+  uint8_t bytes[72];
+  uint8_t mac_address[6];
   uint8_t encryption;
   uint8_t compression;
 } __attribute__((packed));

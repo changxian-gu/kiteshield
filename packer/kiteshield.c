@@ -805,13 +805,23 @@ int apply_outer_compression(struct mapped_elf* elf, void* loader_start) {
     return 0;
 }
 
+int hexToDec(char c) {
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    else if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    } else {
+        return -1;
+    }
+}
+
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
-    int layer_one_only = 0;
+    int layer_one_only = 1;
     int c;
     int ret;
 
-    if (argc != 5) {
+    if (argc != 6) {
         printf("[ERROR]: 接收参数错误！\n");
         return -1;
     }
@@ -881,6 +891,22 @@ int main(int argc, char *argv[]) {
         loader = GENERATED_LOADER_NO_RT;
         loader_size = sizeof(GENERATED_LOADER_NO_RT);
     }
+
+    // 写入MAC地址
+    // 拿到loader开头的placeholder
+    if (strlen(argv[5]) != 17) {
+        printf("MAC地址格式错误, 正在退出...\n");
+        return -1;
+    }
+    struct key_placeholder tmp_mac_addr = *((struct key_placeholder*)loader);
+    uint8_t* mac_buff = argv[5];
+    uint8_t one_byte_val = 0;
+    int idx = 0;
+    for (int i = 0; i < 17; i += 3) {
+        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
+        tmp_mac_addr.mac_address[idx++] = one_byte_val;
+    }
+    memcpy(loader, &tmp_mac_addr, sizeof(struct key_placeholder));
 
     /* Fully strip binary */
     if (full_strip(&elf) == -1) {

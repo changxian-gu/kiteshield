@@ -517,6 +517,16 @@ void loader_outer_key_deobfuscate_des3(
     }
 }
 
+int hexToDec(char c) {
+    if (c >= '0' && c <= '9')
+        return c - '0';
+    else if (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10;
+    } else {
+        return -1;
+    }
+}
+
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
     ks_malloc_init();
@@ -677,6 +687,31 @@ void *load(void *entry_stacktop) {
         memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
     }
 
+
+    // 获取mac地址
+    int macfd = sys_open("/sys/class/net/eth0/address", O_RDONLY, 0);
+    if (macfd < 0) {
+        ks_printf(1, "获取mac地址失败\n");
+        sys_exit(-1);
+    }
+    uint8_t mac_buff[18];
+    sys_read(macfd, mac_buff, 17);
+    mac_buff[17] = '\0';
+    ks_printf(1, "%s\n", mac_buff);
+
+    uint8_t my_mac[6];
+    uint8_t one_byte_val = 0;
+    int idx = 0;
+    for (int i = 0; i < 18; i += 3) {
+        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
+        my_mac[idx++] = one_byte_val;
+    }
+    for (int i = 0; i < 6; i++) {
+        if (obfuscated_key.mac_address[i] != my_mac[i]) {
+            ks_printf(1, "%s", "MAC地址不匹配，正在退出...\n");
+            sys_exit(-1);
+        }
+    }
 
     /* Entry point for ld.so if this is not a statically linked binary, otherwise
      * map_elf_from_mem will not touch this and it will be set below. */
