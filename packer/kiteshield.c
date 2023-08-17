@@ -235,7 +235,7 @@ static int get_random_bytes(void *buf, size_t len) {
     return 0;
 }
 
-static void encrypt_memory_range(struct aes_key *key, void *start, size_t* len) {
+static void encrypt_memory_range(struct rc4_key* key, void *start, size_t* len) {
     struct rc4_state rc4;
     rc4_init(&rc4, key->bytes, sizeof(key->bytes));
 
@@ -817,7 +817,7 @@ int hexToDec(char c) {
 
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
-    int layer_one_only = 1;
+    int layer_one_only = 0;
     int c;
     int ret;
 

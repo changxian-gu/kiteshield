@@ -104,7 +104,6 @@ struct trap_point {
 
   /* Byte that was overwritten by the int3, needed so we can overwrite and
    * execute the original instruction */
-  // 加密后的字节
   uint8_t value;
   /* Index into the function array for the containing function */
   int fcn_i;
