@@ -109,27 +109,6 @@ void obf_deobf_outer_key_rc4(
   }
 }
 
-// void obf_outer_key(
-//     struct aes_key *old_key,
-//     struct aes_key *new_key,
-//     unsigned char *loader_bin,
-//     unsigned int loader_bin_size)
-// {
-//   __builtin_memcpy(new_key, old_key->bytes, sizeof(struct aes_key));
-
-// #ifdef NO_ANTIDEBUG
-//   return;
-// #endif
-
-//   /* Skip the struct des_key of course, we just want the code */
-//   unsigned int loader_index = sizeof(struct key_placeholder);
-//   unsigned int key_index = 0;
-//   while (loader_index < loader_bin_size / 10) {
-//     new_key->bytes[key_index] ^= loader_bin[loader_index];
-//     loader_index++;
-//     key_index = (key_index + 1) % sizeof(struct aes_key);
-//   }
-// }
 
 /* Runtime info obfuscation / deobfuscation function.
  *

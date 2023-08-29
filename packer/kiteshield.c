@@ -235,7 +235,7 @@ static int get_random_bytes(void *buf, size_t len) {
     return 0;
 }
 
-static void encrypt_memory_range(struct rc4_key* key, void *start, size_t* len) {
+static void encrypt_memory_range(struct rc4_key *key, void *start, size_t len) {
     struct rc4_state rc4;
     rc4_init(&rc4, key->bytes, sizeof(key->bytes));
 
@@ -245,7 +245,6 @@ static void encrypt_memory_range(struct rc4_key* key, void *start, size_t* len) 
         curr++;
     }
 }
-
 
 static void encrypt_memory_range_aes(struct aes_key *key, void *start, size_t len) {
     size_t key_len = sizeof(struct aes_key);
@@ -416,7 +415,9 @@ static int process_func(
 static int apply_inner_encryption(
         struct mapped_elf *elf,
         struct runtime_info **rt_info) {
-   /**
+    info("applying inner encryption");
+
+    /**
      * 如果section的偏移为0，符号表为空，则无法加密内部加密
      */
     if (elf->ehdr->e_shoff == 0 || !elf->symtab) {
@@ -639,7 +640,11 @@ static void *inject_rt_info(
                           sizeof(struct trap_point) * rt_info->ntraps +
                           sizeof(struct function) * rt_info->nfuncs;
     void *loader_rt_info = malloc(old_size + rt_info_size);
-    obf_deobf_rt_info(rt_info);
+    info("sizeof runtime_info %u, sizeof trap_point %u, sizeof function:%u the rt_info_size : %u", sizeof(struct runtime_info), sizeof(struct trap_point),
+                    sizeof(struct function), rt_info_size);
+    info("rt_info->ntraps : %u, rt_info->nfuncs : %u", rt_info->ntraps, rt_info->nfuncs);
+    // obf_deobf_rt_info(rt_info);
+    info("the runtime_info address : %p", loader_rt_info + old_size);
     memcpy(loader_rt_info, loader, old_size);
     *new_size = old_size + rt_info_size;
 
@@ -648,7 +653,7 @@ static void *inject_rt_info(
 
 
     /* subtract sizeof(struct runtime_info) here to ensure we overwrite the
-     * non flexible-array portion of the struct that the linker actually puts in
+     * non flexible-array portion of the struct that the linker actually puts inG
      * the code. */
     memcpy(loader_rt_info + old_size - sizeof(struct runtime_info),
            rt_info, rt_info_size);
@@ -817,10 +822,13 @@ int hexToDec(char c) {
 
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
-    int layer_one_only = 0;
+    int layer_one_only = 1;
     int c;
     int ret;
 
+    for (int i = 0; i < argc; i++) {
+        printf("argv[%d] : %s\n", i, argv[i]);
+    }
     if (argc != 6) {
         printf("[ERROR]: 接收参数错误！\n");
         return -1;
@@ -909,10 +917,10 @@ int main(int argc, char *argv[]) {
     memcpy(loader, &tmp_mac_addr, sizeof(struct key_placeholder));
 
     /* Fully strip binary */
-    if (full_strip(&elf) == -1) {
-        err("could not strip binary");
-        return -1;
-    }
+    // if (full_strip(&elf) == -1) {
+    //     err("could not strip binary");
+    //     return -1;
+    // }
 
     ret = apply_outer_compression(&elf, loader);
     if (ret != 0) {

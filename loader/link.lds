@@ -31,7 +31,7 @@ SECTIONS
     *(.data)
   }
   .tp_info : {
-    *runtime.o(.tp_info)
+   *runtime.o(.tp_info)
   }
 }
 

@@ -4,11 +4,6 @@
 #include "common/include/defs.h"
 #include "cipher/aes.h"
 
-void obf_deobf_outer_key(struct aes_key *old_key,
-                         struct aes_key *new_key,
-                         unsigned char *loader_bin,
-                         unsigned int loader_bin_size);
-
 void obf_deobf_outer_key_aes(
     struct aes_key *old_key,
     struct aes_key *new_key,
