@@ -35,6 +35,7 @@
 #include "core/crypto.h"
 #include "hash/hash_algorithms.h"
 #include "mpi/mpi.h"
+#include "common/include/defs.h"
 
 //C++ guard
 #ifdef __cplusplus
@@ -70,6 +71,17 @@ typedef struct
    int_t slot; ///<Private key slot
 } RsaPrivateKey;
 
+// typedef struct {
+//    int nLen;
+//    int eLen;
+//    int dLen;
+//    int pLen;
+//    int qLen;
+//    int dpLen;
+//    int dqLen;
+//    int qinvLen;
+//    uint8_t* data;
+// } FormatedRsaPrivateKey;
 
 //RSA related constants
 extern const uint8_t PKCS1_OID[8];
@@ -169,6 +181,10 @@ error_t rsaGeneratePrivateKey(const PrngAlgo *prngAlgo, void *prngContext,
 
 error_t rsaGeneratePublicKey(const RsaPrivateKey *privateKey,
    RsaPublicKey *publicKey);
+
+void rsaPrivateKeyFormat(const RsaPrivateKey* privateKey, uint8_t* output, FormatedRsaPrivateKey* formatedPrivateKey);
+
+void rsaPrivateKeyParse(FormatedRsaPrivateKey* formatedRsaPrivateKey, RsaPrivateKey* privateKey);
 
 //C++ guard
 #ifdef __cplusplus

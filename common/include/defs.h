@@ -40,7 +40,8 @@
 /* This struct is stored at a predefined offset in the loader code, allowing
  * the packer to copy the RC4 decryption key over the loader. */
 #define KEY_SIZE 16
-#define KEY_SIZE_AFTER_ALIGN 80
+// 128 + 8 + 8 + 32 + 8 + 24(填充) + 1024
+#define KEY_SIZE_AFTER_ALIGN 1232
 struct rc4_key {
   uint8_t bytes[16];
 } __attribute__((packed));
@@ -57,12 +58,26 @@ struct aes_key {
   uint8_t bytes[16];
 } __attribute__((packed));
 
+typedef struct {
+   uint32_t nLen;
+   uint32_t eLen;
+   uint32_t dLen;
+   uint32_t pLen;
+   uint32_t qLen;
+   uint32_t dpLen;
+   uint32_t dqLen;
+   uint32_t qinvLen;
+   uint8_t* data;
+} FormatedRsaPrivateKey;
+
 // 用来存储key，保证这个数组能容纳最大长度的key
 struct key_placeholder {
-  uint8_t bytes[72];
+  uint8_t bytes[128];
   uint8_t mac_address[6];
   uint8_t encryption;
   uint8_t compression;
+  FormatedRsaPrivateKey rsa_key_args_len;
+  uint8_t my_rsa_key[1024];
 } __attribute__((packed));
 
 /* Represents a function that has been encrypted/instrumented and that the

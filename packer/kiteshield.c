@@ -24,6 +24,9 @@
 #include "cipher/des3.h"
 #include "cipher/rc4.h"
 #include "cipher_modes/ecb.h"
+
+#include "rng/yarrow.h"
+#include "pkc/rsa.h"
 // include compression headers
 #include "compression/lzma/Lzma.h"
 #include "compression/zstd/zstd.h"
@@ -33,6 +36,17 @@
 /* Work-memory needed for compression. Allocate memory in units
  * of 'lzo_align_t' (instead of 'char') to make sure it is properly aligned.
  */
+
+
+YarrowContext yarrowContext;
+
+void printBytes(const char* msg, unsigned long len) {
+    for (int i = 0; i < len; i++) {
+        ks_printf(1, "0x%x(", (unsigned char)(msg[i]));
+        ks_printf(1, "%d) ", (unsigned char)(msg[i]));
+    }
+    ks_printf(1, "%s", "\n");
+}
 
 #define HEAP_ALLOC(var,size) \
     lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
@@ -143,7 +157,7 @@ static int produce_output_elf(
      * passing decryption key and other info to loader), which is the first
      * sizeof(struct des_key) bytes of the loader code (guaranteed by the linker
      * script) */
-    // 跳过打包后的ELF头和两个prog header和placeholder的大小，正好到达loader的.text的第一个字节处, KEY修改为64字节
+    // 跳过打包后的ELF头和两个prog header和placeholder的大小，正好到达loader的.text的第一个字节处
     Elf64_Addr entry_vaddr = LOADER_ADDR +
                              sizeof(Elf64_Ehdr) +
                              (sizeof(Elf64_Phdr) * 2) +
@@ -822,7 +836,7 @@ int hexToDec(char c) {
 
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
-    int layer_one_only = 1;
+    int layer_one_only = 0;
     int c;
     int ret;
 
@@ -906,21 +920,37 @@ int main(int argc, char *argv[]) {
         printf("MAC地址格式错误, 正在退出...\n");
         return -1;
     }
-    struct key_placeholder tmp_mac_addr = *((struct key_placeholder*)loader);
+
+    struct key_placeholder place_holder = *((struct key_placeholder*)loader);
     uint8_t* mac_buff = argv[5];
     uint8_t one_byte_val = 0;
     int idx = 0;
     for (int i = 0; i < 17; i += 3) {
         one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
-        tmp_mac_addr.mac_address[idx++] = one_byte_val;
+        place_holder.mac_address[idx++] = one_byte_val;
     }
-    memcpy(loader, &tmp_mac_addr, sizeof(struct key_placeholder));
+
+
+    uint8_t seed[32];
+    yarrowInit(&yarrowContext);
+    yarrowSeed(&yarrowContext, seed, sizeof(seed));
+
+    RsaPublicKey publicKey;
+    RsaPrivateKey privateKey;
+    rsaInitPublicKey(&publicKey);
+    rsaInitPrivateKey(&privateKey);
+    rsaGenerateKeyPair(&yarrowPrngAlgo, &yarrowContext, 1024, 65537, &privateKey, &publicKey);
+    rsaPrivateKeyFormat(&privateKey, place_holder.my_rsa_key, &place_holder.rsa_key_args_len);
+
+    // 把placeholder写回
+    memcpy(loader, &place_holder, sizeof(struct key_placeholder));
 
     /* Fully strip binary */
     // if (full_strip(&elf) == -1) {
     //     err("could not strip binary");
     //     return -1;
     // }
+
 
     ret = apply_outer_compression(&elf, loader);
     if (ret != 0) {
@@ -933,6 +963,16 @@ int main(int argc, char *argv[]) {
         err("could not apply outer encryption");
         return -1;
     }
+
+
+    // 用Rsa加密对称密钥
+    char cipher[128];
+    int cipher_len;
+    place_holder = *((struct key_placeholder*)loader);
+    rsaesPkcs1v15Encrypt(&yarrowPrngAlgo, &yarrowContext, &publicKey, place_holder.bytes, 117, cipher, &cipher_len);
+    memcpy(place_holder.bytes, cipher, 128);
+    memcpy(loader, &place_holder, sizeof(struct key_placeholder));
+    
     verbose("packed app data : %d %d %d %d\n", *(unsigned char*)elf.start, *((unsigned char*)elf.start + 1),*((unsigned char*)elf.start + 2),*((unsigned char*)elf.start + 3));
 
 

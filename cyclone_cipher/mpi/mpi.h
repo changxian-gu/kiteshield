@@ -32,7 +32,7 @@
 #define _MPI_H
 
 //Dependencies
-#include <stdio.h>
+// #include <stdio.h>
 #include "core/crypto.h"
 
 //Size of the sub data type
@@ -140,7 +140,7 @@ error_t mpiMontgomeryRed(Mpi *r, const Mpi *a, uint_t k, const Mpi *p, Mpi *t);
 
 void mpiMulAccCore(uint_t *r, const uint_t *a, int_t m, const uint_t b);
 
-void mpiDump(FILE *stream, const char_t *prepend, const Mpi *a);
+// void mpiDump(FILE *stream, const char_t *prepend, const Mpi *a);
 
 //C++ guard
 #ifdef __cplusplus

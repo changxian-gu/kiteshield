@@ -45,7 +45,8 @@
         "tuple": "c",
         "utility": "c",
         "chrono": "c",
-        "inner_rc4.h": "c"
+        "inner_rc4.h": "c",
+        "optional": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }
