@@ -263,7 +263,7 @@ int convert_str_to_dec(char* str, int start, int end) {
 
 static int get_random_bytes(void *buf, size_t len) {
     FILE *f;
-    CK_NEQ_PERROR(f = fopen("/dev/zero", "r"), NULL);
+    CK_NEQ_PERROR(f = fopen("/dev/random", "r"), NULL);
     CK_NEQ_PERROR(fread(buf, len, 1, f), 0);
     CK_NEQ_PERROR(fclose(f), EOF);
     // memset(buf, 0xef, len);
@@ -386,16 +386,10 @@ static int process_func(struct mapped_elf *elf, Elf64_Sym *func_sym,
   tp->value = *func_start;
   tp->fcn_i = rt_info->nfuncs;
 
-  ks_printf(1, "+++the first 8 bytes is :");
-  printBytes(func_start, 8);
-
-  // encrypt_memory_range(&fcn->key, func_start, func_sym->st_size);
+  encrypt_memory_range(&fcn->key, func_start, func_sym->st_size);
 
   *func_start = INT3;
   printf("[debug] func start is %08x\n", *func_start);
-
-  ks_printf(1, "+++the first 8 bytes is :");
-  printBytes(func_start, 8);
 
   rt_info->nfuncs++;
 
@@ -492,10 +486,6 @@ static int apply_inner_encryption(struct mapped_elf *elf,
     } else if (sym->st_value == 0 || sym->st_size < 8) {
       verbose("not encrypting function %s due to its address or size",
               elf_get_sym_name(elf, sym));
-      continue;
-    } else if (strncmp(elf_get_sym_name(elf, sym), "call_weak_fn", 10) == 0) {
-      continue;
-    } else if (strncmp(elf_get_sym_name(elf, sym), "_start", 6) == 0) {
       continue;
     }
     if (process_func(elf, sym, *rt_info, fcn_arr, tp_arr) == -1) {

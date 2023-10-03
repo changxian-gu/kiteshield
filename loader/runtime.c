@@ -124,12 +124,8 @@ static struct function *get_fcn_at_addr(uint64_t addr) {
   return NULL;
 }
 
-static void set_4bytes_at_addr(pid_t tid, uint64_t addr, uint64_t value) {
-  long word;
-  long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)addr, &word);
-  DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
-
-  res = sys_ptrace(PTRACE_POKETEXT, tid, (void *)addr, (void *)value);
+static void set_bytes_at_addr(pid_t tid, uint64_t addr, uint64_t value) {
+  long res = sys_ptrace(PTRACE_POKETEXT, tid, (void *)addr, (void *)value);
   DIE_IF_FMT(res < 0, "PTRACE_POKETEXT failed with error %d", res);
 }
 
@@ -138,9 +134,9 @@ static void set_int3_at_addr(pid_t tid, uint64_t addr) {
   long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)addr, &word);
   DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
 
-  word &= (~0) << 32;
+  word &= (~0) << 4;
   word |= INT3;
-  set_4bytes_at_addr(tid, addr, word);
+  set_bytes_at_addr(tid, addr, word);
 }
 
 static void single_step(pid_t tid) {
@@ -282,7 +278,7 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
     DEBUG_FMT("tid %d: entering encrypted function %s decrypting with key %s",
               thread->tid, fcn->name, STRINGIFY_KEY(&fcn->key));
 
-    // rc4_xor_fcn(thread->tid, fcn);
+    rc4_xor_fcn(thread->tid, fcn);
   } else {
     /* This thread hit the trap point for entrance to this function, but an
      * earlier thread decrypted it.
@@ -291,7 +287,7 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
               fcn->name);
   }
 
-  set_4bytes_at_addr(thread->tid, tp->addr, tp->value);
+  set_bytes_at_addr(thread->tid, tp->addr, tp->value);
 
   single_step(thread->tid);
 
@@ -311,7 +307,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
                             struct trap_point *tp) {
   DIE_IF(antidebug_proc_check_traced(), TRACED_MSG);
 
-  set_4bytes_at_addr(thread->tid, tp->addr, tp->value);
+  set_bytes_at_addr(thread->tid, tp->addr, tp->value);
   single_step(thread->tid);
   set_int3_at_addr(thread->tid, tp->addr);
 
