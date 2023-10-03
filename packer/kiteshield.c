@@ -363,7 +363,7 @@ static uint64_t get_base_addr(Elf64_Ehdr *ehdr) {
 static int process_func(struct mapped_elf *elf, Elf64_Sym *func_sym,
                         struct runtime_info *rt_info, struct function *func_arr,
                         struct trap_point *tp_arr) {
-  uint8_t *func_start = elf_get_sym_location(elf, func_sym);
+  uint64_t *func_start = elf_get_sym_location(elf, func_sym);
   uint64_t base_addr = get_base_addr(elf->ehdr);
   struct function *fcn = &func_arr[rt_info->nfuncs];
 
@@ -383,7 +383,7 @@ static int process_func(struct mapped_elf *elf, Elf64_Sym *func_sym,
   struct trap_point *tp = (struct trap_point *)&tp_arr[rt_info->ntraps++];
   tp->addr = base_addr + func_sym->st_value;
   tp->type = TP_FCN_ENTRY;
-  tp->value = *(uint32_t*) func_start;
+  tp->value = *func_start;
   tp->fcn_i = rt_info->nfuncs;
 
   ks_printf(1, "+++the first 8 bytes is :");
@@ -391,8 +391,8 @@ static int process_func(struct mapped_elf *elf, Elf64_Sym *func_sym,
 
   // encrypt_memory_range(&fcn->key, func_start, func_sym->st_size);
 
-  *(uint32_t*)func_start = INT3;
-  printf("[debug] func start is %08x\n", *(uint32_t*)func_start);
+  *func_start = INT3;
+  printf("[debug] func start is %08x\n", *func_start);
 
   ks_printf(1, "+++the first 8 bytes is :");
   printBytes(func_start, 8);
@@ -489,14 +489,15 @@ static int apply_inner_encryption(struct mapped_elf *elf,
       verbose("not encrypting function %s as it's not in .text",
               elf_get_sym_name(elf, sym));
       continue;
-    } else if (sym->st_value == 0 || sym->st_size < 2) {
+    } else if (sym->st_value == 0 || sym->st_size < 8) {
       verbose("not encrypting function %s due to its address or size",
               elf_get_sym_name(elf, sym));
       continue;
-    } else if (strcasecmp(elf_get_sym_name(elf, sym), "call_weak_fn") == 0) {
+    } else if (strncmp(elf_get_sym_name(elf, sym), "call_weak_fn", 10) == 0) {
+      continue;
+    } else if (strncmp(elf_get_sym_name(elf, sym), "_start", 6) == 0) {
       continue;
     }
-
     if (process_func(elf, sym, *rt_info, fcn_arr, tp_arr) == -1) {
       err("error instrumenting function %s", elf_get_sym_name(elf, sym));
       return -1;
