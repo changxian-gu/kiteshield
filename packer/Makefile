@@ -3,10 +3,10 @@ CFLAGS_COMMON = -Wall -std=gnu99 -I .. -I../cyclone_cipher -I../cyclone_cipher/c
 # CFLAGS_COMMON = -Wall -Werror -std=gnu99 -I ..
 CFLAGS = $(CFLAGS_COMMON)
 # 目前zstd算法的外壳支持使用zstd库
-LDFLAGS = -Lbddisasm/bin/x64/Release -static -L../compression/zstd/ -lzstd
+LDFLAGS = -Lbddisasm/bin/x64/Release -static -L../compression/zstd/ -lzstd -L../compression/ucl/ -lucl
 LIB = -L../cyclone_cipher -lcrypto
 
-SRCS = $(wildcard *.c ../common/*.c ../loader/malloc.c ../loader/syscalls.c ../loader/debug.c ../loader/string.c ../compression/lzma/*.c ../compression/lzo/*.c ../compression/ucl/src/*.c)
+SRCS = $(wildcard *.c ../common/*.c ../loader/malloc.c ../loader/syscalls.c ../loader/debug.c ../loader/string.c ../compression/lzma/*.c ../compression/lzo/*.c)
 
 OBJS = $(addprefix ./obj/, $(notdir $(SRCS:.c=.o)))
 BIN_NAME = kiteshield

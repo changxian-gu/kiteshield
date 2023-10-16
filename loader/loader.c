@@ -539,14 +539,9 @@ void printBytes1(const char* msg, unsigned long len) {
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
     ks_malloc_init();
-
-
-
-
     // 反调试功能, 具体怎么反调试的?
     if (antidebug_proc_check_traced())
         DIE(TRACED_MSG);
-
     antidebug_remove_ld_env_vars(entry_stacktop);
 
     /* Disable core dumps via rlimit here before we start doing sensitive stuff
@@ -556,19 +551,19 @@ void *load(void *entry_stacktop) {
     antidebug_rlimit_set_zero_core();
 
     // 解析出Rsa私钥，并对对称密钥解密
-    RsaPrivateKey private_key;
-    rsaInitPrivateKey(&private_key);
-    obfuscated_key.rsa_key_args_len.data = obfuscated_key.my_rsa_key;
-    rsaPrivateKeyParse(&obfuscated_key.rsa_key_args_len, &private_key);
-    uint8_t output[1024];
-    // C 语言中传参一定要类型相同，尽量避免类型转换，message_len 定义为int*与形参size_t*不同，会导致严重错误
-    // 如果函数内使用指针解引用message_len,会把后面4个与自己无关的字节包含，导致值错误
-    size_t message_len = 117;
-    char* cipher = obfuscated_key.bytes;
-    int cipher_len = 128;
-    error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 1024, &message_len);
-    DEBUG_FMT("decrypt error:%d", error);
-    memcpy(obfuscated_key.bytes, output, 128);
+    // RsaPrivateKey private_key;
+    // rsaInitPrivateKey(&private_key);
+    // obfuscated_key.rsa_key_args_len.data = obfuscated_key.my_rsa_key;
+    // rsaPrivateKeyParse(&obfuscated_key.rsa_key_args_len, &private_key);
+    // uint8_t output[1024];
+    // // C 语言中传参一定要类型相同，尽量避免类型转换，message_len 定义为int*与形参size_t*不同，会导致严重错误
+    // // 如果函数内使用指针解引用message_len,会把后面4个与自己无关的字节包含，导致值错误
+    // size_t message_len = 117;
+    // char* cipher = obfuscated_key.bytes;
+    // int cipher_len = 128;
+    // error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 1024, &message_len);
+    // DEBUG_FMT("decrypt error:%d", error);
+    // memcpy(obfuscated_key.bytes, output, 128);
 
 
     /* As per the SVr4 ABI */
@@ -717,7 +712,7 @@ void *load(void *entry_stacktop) {
 
 
     // 获取mac地址
-    int macfd = sys_open("/sys/class/net/eth0/address", O_RDONLY, 0);
+    int macfd = sys_open("/sys/class/net/enp4s0/address", O_RDONLY, 0);
     if (macfd < 0) {
         ks_printf(1, "获取mac地址失败\n");
         sys_exit(-1);

@@ -40,6 +40,7 @@
 /* This struct is stored at a predefined offset in the loader code, allowing
  * the packer to copy the RC4 decryption key over the loader. */
 #define KEY_SIZE 16
+#define SERIAL_SIZE 39
 // 128 + 8 + 8 + 32 + 8 + 24(填充) + 1024
 #define KEY_SIZE_AFTER_ALIGN 1232
 struct rc4_key {
