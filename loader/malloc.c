@@ -1,7 +1,8 @@
 #include "loader/include/malloc.h"
+
 #include "loader/include/debug.h"
-#include "loader/include/syscalls.h"
 #include "loader/include/string.h"
+#include "loader/include/syscalls.h"
 /* 20 MiB */
 #define HEAP_SIZE (20 * 1 << 20)
 
@@ -15,11 +16,9 @@ struct block {
 };
 
 void ks_malloc_init() {
-    heap_base = sys_mmap(NULL,
-                         HEAP_SIZE,
-                         PROT_READ | PROT_WRITE,
+    heap_base = sys_mmap(NULL, HEAP_SIZE, PROT_READ | PROT_WRITE,
                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    DIE_IF_FMT((long) heap_base < 0, "mmap failure %d", heap_base);
+    DIE_IF_FMT((long)heap_base < 0, "mmap failure %d", heap_base);
 
     struct block *first = heap_base;
     first->size = HEAP_SIZE - sizeof(struct block);
@@ -44,7 +43,7 @@ static struct block *split_block(size_t size, struct block *victim) {
     }
 
     struct block *new_block =
-            (struct block *) (((char *) victim) + sizeof(struct block) + size);
+        (struct block *)(((char *)victim) + sizeof(struct block) + size);
     new_block->size = victim->size - size - sizeof(struct block);
     new_block->in_use = 0;
     new_block->next = victim->next;
@@ -101,8 +100,8 @@ void *ks_malloc(size_t size) {
     return target + 1;
 }
 
-void* ks_calloc(size_t num, size_t size) {
-    void* p = ks_malloc(num * size);
+void *ks_calloc(size_t num, size_t size) {
+    void *p = ks_malloc(num * size);
     if (p == NULL)
         return NULL;
     memset(p, 0, num * size);
@@ -110,7 +109,7 @@ void* ks_calloc(size_t num, size_t size) {
 }
 
 void ks_free(void *ptr) {
-    struct block *block = ((struct block *) ptr) - 1;
+    struct block *block = ((struct block *)ptr) - 1;
     block->in_use = 0;
 
     /* Coalesce back */

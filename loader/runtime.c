@@ -1,9 +1,8 @@
 #ifdef USE_RUNTIME
 
 #include "common/include/defs.h"
-#include "common/include/obfuscation.h"
 #include "common/include/inner_rc4.h"
-
+#include "common/include/obfuscation.h"
 #include "loader/include/anti_debug.h"
 #include "loader/include/debug.h"
 #include "loader/include/errno.h"
@@ -15,34 +14,34 @@
 #include "loader/include/types.h"
 
 /* See PTRACE_SETOPTIONS in ptrace manpage */
-#define PTRACE_EVENT_PRESENT(wstatus, event)                                   \
-  ((wstatus) >> 8 == (SIGTRAP | (event) << 8))
+#define PTRACE_EVENT_PRESENT(wstatus, event) \
+    ((wstatus) >> 8 == (SIGTRAP | (event) << 8))
 
-#define FCN_ARR_START                                                          \
-  ((struct function *)(((struct trap_point *)rt_info.data) + rt_info.ntraps))
+#define FCN_ARR_START \
+    ((struct function *)(((struct trap_point *)rt_info.data) + rt_info.ntraps))
 #define FCN_FROM_TP(tp) ((struct function *)(FCN_ARR_START + tp->fcn_i))
 
-#define FCN_INC_REF(thread, fcn)                                               \
-  do {                                                                         \
-    ((thread)->as->fcn_ref_arr[(fcn)->id]++);                                  \
-  } while (0)
+#define FCN_INC_REF(thread, fcn)                  \
+    do {                                          \
+        ((thread)->as->fcn_ref_arr[(fcn)->id]++); \
+    } while (0)
 
-#define FCN_DEC_REF(thread, fcn)                                               \
-  do {                                                                         \
-    ((thread)->as->fcn_ref_arr[(fcn)->id]--);                                  \
-  } while (0)
+#define FCN_DEC_REF(thread, fcn)                  \
+    do {                                          \
+        ((thread)->as->fcn_ref_arr[(fcn)->id]--); \
+    } while (0)
 
-#define FCN_ENTER(thread, fcn)                                                 \
-  do {                                                                         \
-    bt_push(thread, fcn);                                                      \
-    FCN_INC_REF(thread, fcn);                                                  \
-  } while (0)
+#define FCN_ENTER(thread, fcn)    \
+    do {                          \
+        bt_push(thread, fcn);     \
+        FCN_INC_REF(thread, fcn); \
+    } while (0)
 
-#define FCN_EXIT(thread, fcn)                                                  \
-  do {                                                                         \
-    bt_pop(thread);                                                            \
-    FCN_DEC_REF(thread, fcn);                                                  \
-  } while (0)
+#define FCN_EXIT(thread, fcn)     \
+    do {                          \
+        bt_pop(thread);           \
+        FCN_DEC_REF(thread, fcn); \
+    } while (0)
 
 #define FCN_REFCNT(thread, fcn) ((thread)->as->fcn_ref_arr[(fcn)->id])
 
@@ -99,7 +98,7 @@ struct thread_list {
 };
 
 struct trap_point *get_tp(uint64_t addr) {
-    struct trap_point *arr = (struct trap_point *) rt_info.data;
+    struct trap_point *arr = (struct trap_point *)rt_info.data;
     for (int i = 0; i < rt_info.ntraps; i++) {
         if (arr[i].addr == addr) {
             return &arr[i];
@@ -123,13 +122,13 @@ static struct function *get_fcn_at_addr(uint64_t addr) {
 
 static void set_byte_at_addr(pid_t tid, uint64_t addr, uint8_t value) {
     long word;
-    long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) addr, &word);
+    long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)addr, &word);
     DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
 
     word &= (~0) << 8;
     word |= value;
 
-    res = sys_ptrace(PTRACE_POKETEXT, tid, (void *) addr, (void *) word);
+    res = sys_ptrace(PTRACE_POKETEXT, tid, (void *)addr, (void *)word);
     DIE_IF_FMT(res < 0, "PTRACE_POKETEXT failed with error %d", res);
 }
 
@@ -137,7 +136,7 @@ static void single_step(pid_t tid) {
     long res;
     int wstatus;
 
-    retry:
+retry:
     res = sys_ptrace(PTRACE_SINGLESTEP, tid, NULL, NULL);
     DIE_IF_FMT(res < 0, "PTRACE_SINGLESTEP failed with error %d", res);
     sys_wait4(tid, &wstatus, __WALL);
@@ -153,37 +152,37 @@ static void single_step(pid_t tid) {
            "child was stopped unexpectedly during single step, exiting");
 
     if (WSTOPSIG(wstatus) == SIGSTOP) {
-        /* stopped by runtime for concurrency purposes, there should be a SIGTRAP
-         * in the queue next */
+        /* stopped by runtime for concurrency purposes, there should be a
+         * SIGTRAP in the queue next */
         goto retry;
     }
 
     DIE_IF_FMT(
-            WSTOPSIG(wstatus) != SIGTRAP,
-            "child was stopped by unexpected signal %u during single step, exiting",
-            WSTOPSIG(wstatus));
+        WSTOPSIG(wstatus) != SIGTRAP,
+        "child was stopped by unexpected signal %u during single step, exiting",
+        WSTOPSIG(wstatus));
 }
 
 static void rc4_xor_fcn(pid_t tid, struct function *fcn) {
     struct rc4_state rc4;
     rc4_init(&rc4, fcn->key.bytes, sizeof(fcn->key.bytes));
 
-    uint8_t *curr_addr = (uint8_t *) fcn->start_addr;
+    uint8_t *curr_addr = (uint8_t *)fcn->start_addr;
     size_t remaining = fcn->len;
     while (remaining > 0) {
         long word;
-        long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) curr_addr, &word);
+        long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)curr_addr, &word);
         DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
 
         int to_write = remaining > 8 ? 8 : remaining;
         for (int i = 0; i < to_write; i++) {
-            word ^= ((long) rc4_get_byte(&rc4)) << (i * 8);
+            word ^= ((long)rc4_get_byte(&rc4)) << (i * 8);
         }
 
-        res = sys_ptrace(PTRACE_POKETEXT, tid, curr_addr, (void *) word);
+        res = sys_ptrace(PTRACE_POKETEXT, tid, curr_addr, (void *)word);
         DIE_IF_FMT(res < 0, "PTRACE_POKETEXT failed with error %d", res);
 
-        res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *) curr_addr, &word);
+        res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)curr_addr, &word);
         DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
 
         curr_addr += to_write;
@@ -226,9 +225,10 @@ void bt_push(struct thread *thread, struct function *fcn) {
 }
 
 void bt_pop(struct thread *thread) {
-    DIE_IF_FMT(!thread->bt,
-               "attempting to pop backtrace item from empty backtrace of tid %d",
-               thread->tid);
+    DIE_IF_FMT(
+        !thread->bt,
+        "attempting to pop backtrace item from empty backtrace of tid %d",
+        thread->tid);
 
     struct backtrace *new_bt = thread->bt->next;
     ks_free(thread->bt);
@@ -242,21 +242,24 @@ static void stop_threads_in_same_as(struct thread *thread,
         if (curr != thread && curr->as == thread->as)
             sys_tgkill(curr->tg->tgid, curr->tid, SIGSTOP);
 
-        /* We need to busy loop here waiting for the SIGSTOP to be delivered since
-         * sys_tgkill(pid, SIGSTOP) will not immediately stop the process, there is
-         * a period of time between the syscall invocation and when the signal is
-         * actually delivered (the signal is said to be pending during this time).
+        /* We need to busy loop here waiting for the SIGSTOP to be delivered
+         * since sys_tgkill(pid, SIGSTOP) will not immediately stop the process,
+         * there is a period of time between the syscall invocation and when the
+         * signal is actually delivered (the signal is said to be pending during
+         * this time).
          *
          * To prevent this we must ensure the process is fully stopped before
-         * proceeding. We can't do a sys_wait4 on the process as that may return a
-         * SIGTRAP event from the process hitting an int3 (which needs to be
-         * handled in the main loop in runtime_start). Instead repeatedly poll the
-         * third field of /proc/<pid>/stat as to not mess with the ptrace state.
+         * proceeding. We can't do a sys_wait4 on the process as that may return
+         * a SIGTRAP event from the process hitting an int3 (which needs to be
+         * handled in the main loop in runtime_start). Instead repeatedly poll
+         * the third field of /proc/<pid>/stat as to not mess with the ptrace
+         * state.
          *
          * Any state other than 'R' is acceptable. 'T' indicates the SIGSTOP has
-         * been delivered and all other codes (besides 'R') indicated the process
-         * is currently in kernel-space. Upon the next return to userspace, the
-         * SIGSTOP will be delivered before any instructions can be executed.
+         * been delivered and all other codes (besides 'R') indicated the
+         * process is currently in kernel-space. Upon the next return to
+         * userspace, the SIGSTOP will be delivered before any instructions can
+         * be executed.
          */
         while (get_thread_state(curr->tid) == 'R') {
         }
@@ -271,8 +274,9 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
     struct function *fcn = FCN_FROM_TP(tp);
 
     if (FCN_REFCNT(thread, fcn) == 0) {
-        DEBUG_FMT("tid %d: entering encrypted function %s decrypting with key %s",
-                  thread->tid, fcn->name, STRINGIFY_KEY(&fcn->key));
+        DEBUG_FMT(
+            "tid %d: entering encrypted function %s decrypting with key %s",
+            thread->tid, fcn->name, STRINGIFY_KEY(&fcn->key));
 
         rc4_xor_fcn(thread->tid, fcn);
     } else {
@@ -298,8 +302,8 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
     single_step(thread->tid);
     set_byte_at_addr(thread->tid, tp->addr, INT3);
 
-    /* We've now executed the ret or jmp instruction and are in the (potentially)
-     * new function. Figure out what it is. */
+    /* We've now executed the ret or jmp instruction and are in the
+     * (potentially) new function. Figure out what it is. */
     struct user_regs_struct regs;
     long res = sys_ptrace(PTRACE_GETREGS, thread->tid, NULL, &regs);
     DIE_IF_FMT(res < 0, "PTRACE_GETREGS failed with error %d", res);
@@ -309,39 +313,45 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
     if (new_fcn != NULL && new_fcn != prev_fcn) {
         /* We've left the function we were previously in for a new one that we
          * have a record of */
-        DEBUG_FMT("tid %d: leaving function %s for %s via %s at %p", thread->tid,
-                  prev_fcn->name, new_fcn->name, tp->type == TP_JMP ? "jmp" : "ret",
-                  tp->addr);
+        DEBUG_FMT("tid %d: leaving function %s for %s via %s at %p",
+                  thread->tid, prev_fcn->name, new_fcn->name,
+                  tp->type == TP_JMP ? "jmp" : "ret", tp->addr);
 
         FCN_EXIT(thread, prev_fcn);
 
-        /* Encrypt the function we're leaving provided no other thread is in it */
+        /* Encrypt the function we're leaving provided no other thread is in it
+         */
         if (FCN_REFCNT(thread, prev_fcn) == 0) {
-            DEBUG_FMT("tid %d: no other threads were executing in %s, encrypting "
-                      "with key %s",
-                      thread->tid, prev_fcn->name, STRINGIFY_KEY(&new_fcn->key));
+            DEBUG_FMT(
+                "tid %d: no other threads were executing in %s, encrypting "
+                "with key %s",
+                thread->tid, prev_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
             rc4_xor_fcn(thread->tid, prev_fcn);
             set_byte_at_addr(thread->tid, prev_fcn->start_addr, INT3);
         }
 
-        /* If this is a jump to the start instruction of a function, do not execute
-         * any of the code under this conditional (decryption if requried and
-         * refcount bump will be handled by handle_fcn_entry).
+        /* If this is a jump to the start instruction of a function, do not
+         * execute any of the code under this conditional (decryption if
+         * requried and refcount bump will be handled by handle_fcn_entry).
          *
          * If this is a jump to the middle of a function, we're not going to hit
-         * the entry trap point for the function, so that work must be done here.
+         * the entry trap point for the function, so that work must be done
+         * here.
          *
          * This avoids a double encryption/decryption.
          */
         if (tp->type == TP_JMP && new_fcn->start_addr != regs.ip) {
-            DEBUG_FMT("tid %d: function %s is being entered via jmp at non start "
-                      "address %p",
-                      thread->tid, new_fcn->name, regs.ip);
+            DEBUG_FMT(
+                "tid %d: function %s is being entered via jmp at non start "
+                "address %p",
+                thread->tid, new_fcn->name, regs.ip);
             if (FCN_REFCNT(thread, new_fcn) == 0) {
-                DEBUG_FMT("tid %d: function %s being entered is encrypted, decrypting "
-                          "with key %s",
-                          thread->tid, new_fcn->name, STRINGIFY_KEY(&new_fcn->key));
+                DEBUG_FMT(
+                    "tid %d: function %s being entered is encrypted, "
+                    "decrypting "
+                    "with key %s",
+                    thread->tid, new_fcn->name, STRINGIFY_KEY(&new_fcn->key));
 
                 rc4_xor_fcn(thread->tid, new_fcn);
                 set_byte_at_addr(thread->tid, new_fcn->start_addr, INT3);
@@ -352,10 +362,11 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
     } else if (!new_fcn) {
         /* We've left the function we were previously in for a new one that we
          * don't have a record of. */
-        DEBUG_FMT("tid %d: leaving function %s for address %p (no function record) "
-                  "via %s at %p",
-                  thread->tid, prev_fcn->name, regs.ip,
-                  tp->type == TP_JMP ? "jmp" : "ret", tp->addr);
+        DEBUG_FMT(
+            "tid %d: leaving function %s for address %p (no function record) "
+            "via %s at %p",
+            thread->tid, prev_fcn->name, regs.ip,
+            tp->type == TP_JMP ? "jmp" : "ret", tp->addr);
 
         FCN_EXIT(thread, prev_fcn);
 
@@ -368,12 +379,14 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
     } else {
         /* We've executed an instrumented jmp or ret but remained in the same
          * function */
-        DEBUG_FMT("tid %d: hit trap point in %s at %p, but did not leave function "
-                  "(now at %p) (%s)",
-                  thread->tid, prev_fcn->name, tp->addr, regs.ip,
-                  tp->type == TP_JMP ? "internal jmp" : "recursive return");
+        DEBUG_FMT(
+            "tid %d: hit trap point in %s at %p, but did not leave function "
+            "(now at %p) (%s)",
+            thread->tid, prev_fcn->name, tp->addr, regs.ip,
+            tp->type == TP_JMP ? "internal jmp" : "recursive return");
 
-        /* Decrement the refcnt on a recursive return but not an internal jump */
+        /* Decrement the refcnt on a recursive return but not an internal jump
+         */
         if (tp->type == TP_RET)
             FCN_EXIT(thread, prev_fcn);
     }
@@ -472,8 +485,7 @@ void destroy_thread(struct thread_list *list, struct thread *thread) {
     }
 
     struct thread **p = &list->head;
-    while ((*p) != thread)
-        p = &(*p)->next;
+    while ((*p) != thread) p = &(*p)->next;
 
     *p = thread->next;
     list->size--;
@@ -507,7 +519,8 @@ struct address_space *new_address_space(struct address_space *cow_as) {
     if (cow_as)
         memcpy(as->fcn_ref_arr, cow_as->fcn_ref_arr, ref_arr_size);
     else
-        memset(as->fcn_ref_arr, 0, ref_arr_size); /* set everything to encrypted */
+        memset(as->fcn_ref_arr, 0,
+               ref_arr_size); /* set everything to encrypted */
 
     return as;
 }
@@ -583,34 +596,36 @@ static void handle_new_thread(pid_t tid, struct thread *orig_thread,
      * with a child_stack specified as non-null, or done anything else (clone
      * with no child stack, fork, vfork).
      *
-     * In the latter of these cases, the logic here is simple. The thread has the
-     * same stack and thus the same return addresses on it. The backtrace is
+     * In the latter of these cases, the logic here is simple. The thread has
+     * the same stack and thus the same return addresses on it. The backtrace is
      * therefore identical. Because of this, we just copy the backtrace of the
      * parent thread.
      *
      * The former is a bit trickier. If clone(2) is provided with a child_stack
-     * parameter, it must point to a memory region allocated by the parent thread
-     * beforehand. Theoretically, this could contain anything, meaning we have no
-     * real way of knowing what the backtrace should be. In practice, the clone
-     * syscall as implemented in glibc (when returning in the newly-cloned
-     * thread), will simply call the passed in fn argument and then immediately
-     * exit with its return value. We assume this behaviour here. While this will
-     * likely break if a binary does something funky like creating a
-     * preformulated stack and passing that in as child_stack, we have no way of
-     * handling all such funky cases and assuming the glibc behaviour should
-     * cover 99.99% of cases involving clone(2).
+     * parameter, it must point to a memory region allocated by the parent
+     * thread beforehand. Theoretically, this could contain anything, meaning we
+     * have no real way of knowing what the backtrace should be. In practice,
+     * the clone syscall as implemented in glibc (when returning in the
+     * newly-cloned thread), will simply call the passed in fn argument and then
+     * immediately exit with its return value. We assume this behaviour here.
+     * While this will likely break if a binary does something funky like
+     * creating a preformulated stack and passing that in as child_stack, we
+     * have no way of handling all such funky cases and assuming the glibc
+     * behaviour should cover 99.99% of cases involving clone(2).
      */
-    void *child_stack = (void *) regs.si;
+    void *child_stack = (void *)regs.si;
     if (((PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_CLONE)) &&
          child_stack != NULL)) {
-        DEBUG_FMT("tid %d: new thread has a new stack, removing backtrace", tid);
+        DEBUG_FMT("tid %d: new thread has a new stack, removing backtrace",
+                  tid);
         /* Backtrace initially contains just the function the thread was in
          * (eg. __clone for glibc) */
         new_thread->bt = NULL;
         if (orig_thread->bt)
             FCN_ENTER(new_thread, orig_thread->bt->fcn);
     } else {
-        DEBUG_FMT("tid %d: new thread has the same stack, copying backtrace", tid);
+        DEBUG_FMT("tid %d: new thread has the same stack, copying backtrace",
+                  tid);
         new_thread->bt = copy_bt(orig_thread->bt);
     }
 
@@ -622,13 +637,14 @@ static void handle_new_thread(pid_t tid, struct thread *orig_thread,
     ret = sys_ptrace(PTRACE_CONT, tid, 0, 0);
     DIE_IF_FMT(ret < 0, "PTRACE_CONT failed with error %d", ret);
 
-    retry_child_wait:
+retry_child_wait:
     /* The child may not have been scheduled yet, in which case
      * ptrace(PTRACE_CONT, ...) will fail with -ESRCH, loop until it succeeds to
      * get around this.
      */
     ret = sys_ptrace(PTRACE_CONT, new_tid, 0, 0);
-    DIE_IF_FMT(ret < 0 && ret != -ESRCH, "PTRACE_CONT failed with error %d", ret);
+    DIE_IF_FMT(ret < 0 && ret != -ESRCH, "PTRACE_CONT failed with error %d",
+               ret);
 
     if (ret == -ESRCH)
         goto retry_child_wait;
@@ -710,12 +726,12 @@ void setup_initial_thread(pid_t tid, struct thread_list *tlist) {
     /* Set up initial forked child (special case of handle_new_thread) */
     long ret;
     while (1) {
-        /* Spin while we wait for the child do do a ptrace(PTRACE_TRACEME, ...) and
-         * then a raise(SIGSTOP). */
+        /* Spin while we wait for the child do do a ptrace(PTRACE_TRACEME, ...)
+         * and then a raise(SIGSTOP). */
         ret = sys_ptrace(PTRACE_SETOPTIONS, tid, 0,
-                         (void *) (PTRACE_O_EXITKILL | PTRACE_O_TRACECLONE |
-                                   PTRACE_O_TRACEFORK | PTRACE_O_TRACEEXIT |
-                                   PTRACE_O_TRACEEXEC | PTRACE_O_TRACEVFORK));
+                         (void *)(PTRACE_O_EXITKILL | PTRACE_O_TRACECLONE |
+                                  PTRACE_O_TRACEFORK | PTRACE_O_TRACEEXIT |
+                                  PTRACE_O_TRACEEXEC | PTRACE_O_TRACEVFORK));
         DIE_IF_FMT(ret < 0 && ret != -ESRCH,
                    "PTRACE_SETOPTIONS failed with error %d", ret);
 
@@ -726,7 +742,8 @@ void setup_initial_thread(pid_t tid, struct thread_list *tlist) {
     struct thread *thread = ks_malloc(sizeof(struct thread));
     thread->has_wait_prio = 1;
     thread->tg = ks_malloc(sizeof(struct thread_group));
-    thread->tg->tgid = tid; /* Created via fork so it's the thread group leader */
+    thread->tg->tgid =
+        tid; /* Created via fork so it's the thread group leader */
     thread->tg->refcnt = 1;
     thread->tid = tid;
     thread->as = new_address_space(NULL);
@@ -771,7 +788,8 @@ static void handle_thread_exit(struct thread *thread,
         pid_t res = sys_wait4(tid, &wstatus, __WALL);
         DIE_IF_FMT(res < 0, "wait4 syscall failed with error %d", res);
 
-        DIE_IF_FMT(!WIFEXITED(wstatus), "tid %d expected to exit but did not", tid);
+        DIE_IF_FMT(!WIFEXITED(wstatus), "tid %d expected to exit but did not",
+                   tid);
         DEBUG_FMT("tid %d: exited with status %d", tid, WEXITSTATUS(wstatus));
     }
 
@@ -798,12 +816,12 @@ void runtime_start(pid_t child_pid) {
 #ifdef DEBUG_OUTPUT
     DEBUG("list of trap points:");
     for (int i = 0; i < rt_info.ntraps; i++) {
-      struct trap_point *tp = ((struct trap_point *)rt_info.data) + i;
-      const char *type = tp->type == TP_JMP   ? "jmp"
-                         : tp->type == TP_RET ? "ret"
-                                              : "ent";
-      DEBUG_FMT("%p value: %hhx, type: %s, function: %s (#%d)", tp->addr,
-                tp->value, type, FCN_FROM_TP(tp)->name, FCN_FROM_TP(tp)->id);
+        struct trap_point *tp = ((struct trap_point *)rt_info.data) + i;
+        const char *type = tp->type == TP_JMP   ? "jmp"
+                           : tp->type == TP_RET ? "ret"
+                                                : "ent";
+        DEBUG_FMT("%p value: %hhx, type: %s, function: %s (#%d)", tp->addr,
+                  tp->value, type, FCN_FROM_TP(tp)->name, FCN_FROM_TP(tp)->id);
     }
 #endif
 
@@ -831,9 +849,10 @@ void runtime_start(pid_t child_pid) {
         pid_t pid = fair_wait_threads(&tlist, &wstatus);
 
         struct thread *thread = find_thread(&tlist, pid);
-        DIE_IF_FMT(!thread,
-                   "(runtime bug) tid %d trapped but we don't have a record of it",
-                   pid);
+        DIE_IF_FMT(
+            !thread,
+            "(runtime bug) tid %d trapped but we don't have a record of it",
+            pid);
 
         if ((PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_FORK) ||
              PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_VFORK) ||
@@ -849,12 +868,12 @@ void runtime_start(pid_t child_pid) {
             continue;
         }
 
-        /* destroy_thread (which is called by handle_thread_exit) requires that the
-         * thread not yet have exited as it may need to re-encrypt functions in the
-         * thread's address space if there are now no threads executing in them. We
-         * thus we use PTRACE_EVENT_EXIT instead of WIFEXITED here to keep the
-         * thread in a "just about to exit" state that will allow the use of
-         * PTRACE_[PEEK/POKE]TEXT.
+        /* destroy_thread (which is called by handle_thread_exit) requires that
+         * the thread not yet have exited as it may need to re-encrypt functions
+         * in the thread's address space if there are now no threads executing
+         * in them. We thus we use PTRACE_EVENT_EXIT instead of WIFEXITED here
+         * to keep the thread in a "just about to exit" state that will allow
+         * the use of PTRACE_[PEEK/POKE]TEXT.
          */
         if (PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_EXIT)) {
             handle_thread_exit(thread, &tlist);
@@ -866,8 +885,8 @@ void runtime_start(pid_t child_pid) {
             continue;
         }
 
-        DIE_IF_FMT(WIFSIGNALED(wstatus), "child was killed by signal, %u exiting",
-                   WTERMSIG(wstatus));
+        DIE_IF_FMT(WIFSIGNALED(wstatus),
+                   "child was killed by signal, %u exiting", WTERMSIG(wstatus));
         DIE_IF(!WIFSTOPPED(wstatus), "child was stopped unexpectedly, exiting");
 
         if (WSTOPSIG(wstatus) != SIGTRAP && WSTOPSIG(wstatus) != SIGSTOP) {
@@ -875,7 +894,7 @@ void runtime_start(pid_t child_pid) {
                       WSTOPSIG(wstatus));
 
             /* Forward signal to child and continue */
-            sys_ptrace(PTRACE_CONT, pid, NULL, (void *) (long) WSTOPSIG(wstatus));
+            sys_ptrace(PTRACE_CONT, pid, NULL, (void *)(long)WSTOPSIG(wstatus));
             continue;
         }
 
