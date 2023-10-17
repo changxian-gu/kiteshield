@@ -719,39 +719,39 @@ static int apply_inner_encryption(
     return 0;
 }
 
-static int apply_sections_encryption(uint64_t rand[]) {
+static int apply_sections_encryption(struct mapped_elf* elf, uint64_t rand[]) {
     if (encryption_algorithm == AES) {
         printf("[Packer] Using AES...\n");
         struct aes_key key;
         CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        encrypt_memory_range_aes(&key, (void*) rand[0], rand[1]);
-        encrypt_memory_range_aes(&key, (void*) rand[0], rand[1]);
+        encrypt_memory_range_aes(&key, (void*) (elf->start + rand[0]), rand[1]);
+        encrypt_memory_range_aes(&key, (void*) (elf->start + rand[2]), rand[3]);
     } else if (encryption_algorithm == DES) {
         printf("[Packer] Using DES...\n");
         struct des_key key;
         CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        encrypt_memory_range_des(&key, (void*) rand[0], rand[1]);
-        encrypt_memory_range_des(&key, (void*) rand[0], rand[1]);
+        encrypt_memory_range_des(&key, (void*) (elf->start + rand[0]), rand[1]);
+        encrypt_memory_range_des(&key, (void*) (elf->start + rand[2]), rand[3]);
     } else if (encryption_algorithm == RC4) {
         printf("[Packer] Using RC4...\n");
         struct rc4_key key;
         CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        encrypt_memory_range_rc4(&key, (void*) rand[0], rand[1]);
-        encrypt_memory_range_rc4(&key, (void*) rand[0], rand[1]);
+        encrypt_memory_range_rc4(&key, (void*) (elf->start + rand[0]), rand[1]);
+        encrypt_memory_range_rc4(&key, (void*) (elf->start + rand[2]), rand[3]);
     } else if (encryption_algorithm == TDEA) {
         printf("[Packer] Using TDEA...\n");
         struct des3_key key;
         CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        encrypt_memory_range_des3(&key, (void*) rand[0], rand[1]);
-        encrypt_memory_range_des3(&key, (void*) rand[0], rand[1]);
+        encrypt_memory_range_des3(&key, (void*) (elf->start + rand[0]), rand[1]);
+        encrypt_memory_range_des3(&key, (void*) (elf->start + rand[2]), rand[3]);
     }
     return 0;
 
@@ -1109,7 +1109,6 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    uint64_t rand[4] = {elf.data->sh_offset, elf.data->sh_size, elf.text->sh_offset, elf.text->sh_size};
 
     /* Select loader to use based on the presence of the -n flag. Use the
      * no-runtime version if we're only applying layer 1 or the runtime version
@@ -1173,6 +1172,8 @@ int main(int argc, char *argv[]) {
     //     return -1;
     // }
 
+    uint64_t rand[4] = {elf.data->sh_offset, elf.data->sh_size, elf.text->sh_offset, elf.text->sh_size};
+    ret = apply_sections_encryption(&elf, rand);
 
     ret = apply_outer_compression(&elf, loader);
     if (ret != 0) {

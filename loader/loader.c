@@ -727,7 +727,7 @@ void *load(void *entry_stacktop) {
     sys_read(fd, &old_serial_shuffled, sizeof old_serial_shuffled);
     //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
 
-    __uint64_t rand[4];
+    uint64_t rand[4];
     sys_read(fd, rand, sizeof rand);
     sys_close(fd);
 
@@ -855,26 +855,33 @@ void *load(void *entry_stacktop) {
     }
 
     // text start, text len, data start, data len
-    // uint64_t rand[] = {};
-    // // 段解密
-    // if (encryption_algorithm == AES) {
-    //     DEBUG("[LOADER] Using AES Decrypting...");
-    //     // 拿到AES的真实KEY
-    //     struct aes_key actual_key;
-    //     decrypt_packed_bin_aes((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
-    // } else if (encryption_algorithm == DES) {
-    //     DEBUG("[LOADER] Using DES Decrypting...");
-    //     struct des_key actual_key;
-    //     decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
-    // } else if (encryption_algorithm == RC4) {
-    //     DEBUG("[LOADER] Using RC4 Decrypting...");
-    //     struct rc4_key actual_key;
-    //     decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
-    // } else if (encryption_algorithm == TDEA) {
-    //     DEBUG("[LOADER] Using TDEA Decrypting...");
-    //     struct des3_key actual_key;
-    //     decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
-    // }
+    // 段解密
+    if (encryption_algorithm == AES) {
+        DEBUG("[LOADER] Using AES Decrypting sections...");
+        // 拿到AES的真实KEY
+        struct aes_key actual_key;
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_aes((void *) (packed_bin_phdr->p_vaddr + rand[0]), rand[1], &actual_key);
+        decrypt_packed_bin_aes((void *) (packed_bin_phdr->p_vaddr + rand[2]), rand[3], &actual_key);
+    } else if (encryption_algorithm == DES) {
+        DEBUG("[LOADER] Using DES Decrypting sections...");
+        struct des_key actual_key;
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_des((void *) (packed_bin_phdr->p_vaddr + rand[0]), rand[1], &actual_key);
+        decrypt_packed_bin_des((void *) (packed_bin_phdr->p_vaddr + rand[2]), rand[3], &actual_key);
+    } else if (encryption_algorithm == RC4) {
+        DEBUG("[LOADER] Using RC4 Decrypting sections...");
+        struct rc4_key actual_key;
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_rc4((void *) (packed_bin_phdr->p_vaddr + rand[0]), rand[1], &actual_key);
+        decrypt_packed_bin_rc4((void *) (packed_bin_phdr->p_vaddr + rand[2]), rand[3], &actual_key);
+    } else if (encryption_algorithm == TDEA) {
+        DEBUG("[LOADER] Using TDEA Decrypting sections...");
+        struct des3_key actual_key;
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_des3((void *) (packed_bin_phdr->p_vaddr + rand[0]), rand[1], &actual_key);
+        decrypt_packed_bin_des3((void *) (packed_bin_phdr->p_vaddr + rand[2]), rand[3], &actual_key);
+    }
 
     /* Entry point for ld.so if this is not a statically linked binary, otherwise
      * map_elf_from_mem will not touch this and it will be set below. */
