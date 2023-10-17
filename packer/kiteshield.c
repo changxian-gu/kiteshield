@@ -383,8 +383,11 @@ static int produce_output_elf(
     /* Loader code/data */
     CK_NEQ_PERROR(fwrite(loader, loader_size, 1, output_file), 0);
 
+
+    // 预先分配一部分空间用来包含解密后的可执行文件
     /* Packed application contents */
-    CK_NEQ_PERROR(fwrite(elf->start, elf->size, 1, output_file), 0);
+    void* app = malloc(elf->size);
+    CK_NEQ_PERROR(fwrite(app, elf->origin_size, 1, output_file), 0);
 
     return 0;
 }
@@ -1025,6 +1028,28 @@ int hexToDec(char c) {
     }
 }
 
+void shuffle(unsigned char *arr, int n, unsigned char swap_infos[]) {
+  unsigned char index[n];
+  get_random_bytes(index, n);
+
+  // 洗牌算法
+  for (int i = n - 1; i >= 0; i--) {
+    int j = index[i] % (i + 1);
+    unsigned char temp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = temp;
+    swap_infos[i] = j;
+  }
+}
+
+void reverse_shuffle(unsigned char *arr, int n, const unsigned char swap_infos[]) {
+  for (int k = 0; k < n; k++) {
+    unsigned char temp = arr[k];
+    arr[k] = arr[swap_infos[k]];
+    arr[swap_infos[k]] = temp;
+  }
+}
+
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
     int layer_one_only = 1;
@@ -1170,7 +1195,62 @@ int main(int argc, char *argv[]) {
     // memcpy(loader, &place_holder, sizeof(struct key_placeholder));
     
     // verbose("packed app data : %d %d %d %d\n", *(unsigned char*)elf.start, *((unsigned char*)elf.start + 1),*((unsigned char*)elf.start + 2),*((unsigned char*)elf.start + 3));
+    for (int i = 0; i < SERIAL_SIZE; i++) {
+        printf("%02x", serial_send[i]);
+    }
+    printf("\n");
 
+    FILE *fp = NULL;
+    fp = fopen("program", "w+");
+    fwrite(elf.start, elf.size, 1, fp);
+    fclose(fp);
+
+    unsigned char swap_infos[SERIAL_SIZE];
+
+    printf("before shuffled array2:\n");
+    for (int i = 0; i < SERIAL_SIZE; i++) {
+        printf("%02x", serial_send[i]);
+    }
+    printf("\n");
+
+    shuffle(serial_send, SERIAL_SIZE, swap_infos);
+
+    for(int i = 0; i < SERIAL_SIZE; i++)
+        printf("%d ", swap_infos[i]);
+    puts("");
+
+    // 输出洗牌后的序列
+    printf("shuffled array:\n");
+    for (int i = 0; i < SERIAL_SIZE; i++) {
+        printf("%02x", serial_send[i]);
+    }
+    printf("\n");
+
+    // 反推回原始序列
+    unsigned char serial_send_back[SERIAL_SIZE];
+    memcpy(serial_send_back, serial_send, sizeof serial_send);
+    reverse_shuffle(serial_send_back, SERIAL_SIZE, swap_infos);
+
+    //   输出反推回的序列
+    printf("Recovered array:\n");
+    for (int i = 0; i < SERIAL_SIZE; i++) {
+        printf("%02x", serial_send_back[i]);
+    }
+    printf("\n");
+
+
+    fp = fopen("program", "a");
+    fwrite(swap_infos, sizeof swap_infos, 1, fp);
+    fclose(fp);
+
+    fp = fopen("program", "a");
+    fwrite(serial_send, sizeof serial_send, 1, fp);
+    fclose(fp);
+
+    // section num
+    fp = fopen("program", "a");
+    fwrite(rand, sizeof rand, 1, fp);
+    fclose(fp);
 
     /* Write output ELF */
     FILE *output_file;

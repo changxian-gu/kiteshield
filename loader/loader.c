@@ -8,6 +8,7 @@
 #include "loader/include/syscalls.h"
 #include "loader/include/anti_debug.h"
 #include "loader/include/string.h"
+#include "loader/include/termios-struct.h"
 
 // include encryption headers
 #include "cipher/aes.h"
@@ -46,22 +47,93 @@ enum Compression {
     ZSTD
 };
 
-// 串口
-// typedef struct termios termios_t;
-// typedef struct serial_data {
-//     unsigned char databuf[132];//发送/接受数据
-//     int serfd;//串口文件描述符
-// } ser_Data;
+typedef struct termios termios_t;
+typedef struct serial_data {
+    unsigned char data_buf[39];
+    int ser_fd;
+} ser_data;
+unsigned char serial_key[16];
 
-// int serial_communication() {
-//     /**
-//      * extern void *malloc (size_t __size) __THROW __attribute_malloc__
-//      */
-//     termios_t *ter_s = ks_malloc(sizeof(ter_s));
-//     int serport1fd = sys_open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+unsigned short int CRC16_Check(const unsigned char *data, unsigned char len) {
+  unsigned short int CRC16 = 0xFFFF;
+  for (unsigned char i = 0; i < len; i++) {
 
-//     return serport1fd;
-// }
+    CRC16 ^= data[i];
+    for (unsigned char j = 0; j < 8; j++) {
+      unsigned char state = CRC16 & 0x01;
+      CRC16 >>= 1;
+      if (state) {
+        CRC16 ^= 0xA001;
+      }
+    }
+  }
+  return CRC16;
+}
+
+void send(ser_data snd) {
+  ssize_t ret = sys_write(snd.ser_fd, snd.data_buf, sizeof snd.data_buf);
+  if (ret > 0) {
+    DEBUG("send success.");
+  } else {
+    DEBUG("send error!");
+  }
+}
+
+void receive(ser_data rec) {
+  unsigned char res[39];
+  int index = 0;
+  while (1) {
+    unsigned char buf[39];
+    ssize_t ret = sys_read(rec.ser_fd, buf, 39);
+    if (ret > 0) {
+      DEBUG_FMT("receive success, receive size is %d", ret);
+      for (int i = 0; i < ret; i++) {
+        res[index++] = buf[i];
+      }
+    }
+    if (index == 39) {
+      break;
+    }
+  }
+  for (int i = 4, j = 0; i < 4 + 16; i++, j++) {
+    serial_key[j] = res[i];
+  }
+}
+
+int common(uint8_t serial_send[SERIAL_SIZE]) {
+    // 进行串口参数设置
+    ks_malloc_init();
+    termios_t *ter_s = (termios_t*) ks_malloc(sizeof(ter_s));
+    // 不成为控制终端程序，不受其他程序输出输出影响
+    char *device = "/dev/ttyUSB0";
+    int fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+    if (fd < 0) {
+    DEBUG_FMT("%s open failed\r\n", device);
+    return -1;
+    } else {
+    DEBUG("connection device /dev/ttyUSB0 successful");
+    }
+
+    ter_s->c_cflag |= CLOCAL | CREAD; //激活本地连接与接受使能
+    ter_s->c_cflag &= ~CSIZE;//失能数据位屏蔽
+    ter_s->c_cflag |= CS8;//8位数据位
+    ter_s->c_cflag &= ~CSTOPB;//1位停止位
+    ter_s->c_cflag &= ~PARENB;//无校验位
+    ter_s->c_cc[VTIME] = 0;
+    ter_s->c_cc[VMIN] = 0;
+    ter_s->c_ispeed = B115200;
+    ter_s->c_ospeed = B115200;
+
+    ser_data snd_data;
+    ser_data rec_data;
+    snd_data.ser_fd = fd;
+    rec_data.ser_fd = fd;
+
+    memcpy(snd_data.data_buf, serial_send, SERIAL_SIZE);
+    send(snd_data);
+    receive(rec_data);
+    return 0;
+}
 
 
 // 编译的时候存的key其实还没有初始化，在packer里面用混淆后的key覆盖了
@@ -536,8 +608,30 @@ void printBytes1(const char* msg, unsigned long len) {
     ks_printf(1, "%s", "\n");
 }
 
+void reverse_shuffle(unsigned char *arr, int n, const unsigned char swap_infos[]) {
+  for (int k = 0; k < n; k++) {
+    unsigned char temp = arr[k];
+    arr[k] = arr[swap_infos[k]];
+    arr[swap_infos[k]] = temp;
+  }
+}
+
+static int get_key(void *buf, size_t len) {
+    unsigned char *p = (unsigned char *) buf;
+    int index = 0;
+    for(int i = 0; i < len; i++) {
+        p[index++] = serial_key[i % 16];
+    }
+    return 0;
+}
+
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
+    char *device = "/dev/ttyUSB0";
+    if (sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777) < 0) {
+        DEBUG_FMT("%s open faild", device);
+        sys_exit(0);
+    }
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
     if (antidebug_proc_check_traced())
@@ -621,7 +715,30 @@ void *load(void *entry_stacktop) {
 
     DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
+    // 获取program中的部分信息
+    int fd = sys_open("program", O_RDONLY, 0);
+    sys_read(fd, (void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
+    DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
 
+    unsigned char swap_infos[SERIAL_SIZE];
+    sys_read(fd, swap_infos, SERIAL_SIZE);
+
+    unsigned char old_serial_shuffled[SERIAL_SIZE];
+    sys_read(fd, &old_serial_shuffled, sizeof old_serial_shuffled);
+    //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
+
+    __uint64_t rand[4];
+    sys_read(fd, rand, sizeof rand);
+    sys_close(fd);
+
+    reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);
+
+    common(old_serial_shuffled);
+    struct rc4_key actual_key;
+
+    for(int i = 0; i < KEY_SIZE; i++) {
+        actual_key.bytes[i] = serial_key[i];
+    }
 
 
     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
@@ -634,25 +751,26 @@ void *load(void *entry_stacktop) {
         DEBUG("[LOADER] Using AES Decrypting...");
         // 拿到AES的真实KEY
         struct aes_key actual_key;
-        loader_outer_key_deobfuscate_aes(&obfuscated_key, &actual_key, loader_start, loader_size);
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_aes((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == DES) {
         DEBUG("[LOADER] Using DES Decrypting...");
         struct des_key actual_key;
-        loader_outer_key_deobfuscate_des(&obfuscated_key, &actual_key, loader_start, loader_size);
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == RC4) {
         DEBUG("[LOADER] Using RC4 Decrypting...");
         struct rc4_key actual_key;
-        loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key, loader_start, loader_size);
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        // loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key, loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == TDEA) {
         DEBUG("[LOADER] Using TDEA Decrypting...");
         struct des3_key actual_key;
-        loader_outer_key_deobfuscate_des3(&obfuscated_key, &actual_key, loader_start, loader_size);
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz,&actual_key);
     }
@@ -735,6 +853,28 @@ void *load(void *entry_stacktop) {
             sys_exit(-1);
         }
     }
+
+    // text start, text len, data start, data len
+    // uint64_t rand[] = {};
+    // // 段解密
+    // if (encryption_algorithm == AES) {
+    //     DEBUG("[LOADER] Using AES Decrypting...");
+    //     // 拿到AES的真实KEY
+    //     struct aes_key actual_key;
+    //     decrypt_packed_bin_aes((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
+    // } else if (encryption_algorithm == DES) {
+    //     DEBUG("[LOADER] Using DES Decrypting...");
+    //     struct des_key actual_key;
+    //     decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
+    // } else if (encryption_algorithm == RC4) {
+    //     DEBUG("[LOADER] Using RC4 Decrypting...");
+    //     struct rc4_key actual_key;
+    //     decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
+    // } else if (encryption_algorithm == TDEA) {
+    //     DEBUG("[LOADER] Using TDEA Decrypting...");
+    //     struct des3_key actual_key;
+    //     decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
+    // }
 
     /* Entry point for ld.so if this is not a statically linked binary, otherwise
      * map_elf_from_mem will not touch this and it will be set below. */
