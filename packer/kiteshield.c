@@ -9,6 +9,7 @@
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
+#include <termios.h>
 
 #include "common/include/defs.h"
 #include "common/include/inner_rc4.h"
@@ -184,6 +185,7 @@ int common(unsigned char temp[]) {
     if (tcsetattr(fd, TCSANOW, ter_s) != 0) {
         printf("com set error!\r\n");
     }
+    tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
 
     unsigned char rand[32];
     get_random_bytes_v1(rand, sizeof rand);

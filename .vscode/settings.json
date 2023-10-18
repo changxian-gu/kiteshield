@@ -46,7 +46,9 @@
         "utility": "c",
         "chrono": "c",
         "inner_rc4.h": "c",
-        "optional": "c"
+        "optional": "c",
+        "termio.h": "c",
+        "termios.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

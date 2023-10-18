@@ -1,5 +1,8 @@
+#define USE_RUNTIME
 #ifdef USE_RUNTIME
 
+#include <elf.h>
+#include "common/include/termios.h"
 #include "common/include/defs.h"
 #include "common/include/inner_rc4.h"
 #include "common/include/obfuscation.h"
@@ -12,6 +15,7 @@
 #include "loader/include/string.h"
 #include "loader/include/syscalls.h"
 #include "loader/include/types.h"
+#include "loader/include/loader.h"
 
 /* See PTRACE_SETOPTIONS in ptrace manpage */
 #define PTRACE_EVENT_PRESENT(wstatus, event) \
@@ -96,6 +100,137 @@ struct thread_list {
     size_t size;
     struct thread *head;
 };
+
+static int get_random_bytes_v1(void *buf, size_t len) {
+    int fd = sys_open("/dev/urandom", O_RDONLY, 0);
+    sys_read(fd, buf, len);
+    sys_close(fd);
+    return 0;
+}
+
+int common_new_serial(unsigned char temp[]) {
+    // 进行串口参数设置
+    termios_t *ter_s = ks_malloc(sizeof(*ter_s));
+    // 不成为控制终端程序，不受其他程序输出输出影响
+    char *device = "/dev/ttyUSB0";
+    int fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+    if (fd < 0) {
+        DEBUG_FMT("%s open failed\r\n", device);
+        return -1;
+    } else {
+        DEBUG("connection device /dev/ttyUSB0 successful\n");
+    }
+    memset(ter_s, sizeof(*ter_s), 0);
+
+    ter_s->c_cflag |= CLOCAL | CREAD;  // 激活本地连接与接受使能
+    ter_s->c_cflag &= ~CSIZE;          // 失能数据位屏蔽
+    ter_s->c_cflag |= CS8;             // 8位数据位
+    ter_s->c_cflag &= ~CSTOPB;         // 1位停止位
+    ter_s->c_cflag &= ~PARENB;         // 无校验位
+    ter_s->c_cc[VTIME] = 0;
+    ter_s->c_cc[VMIN] = 0;
+    /*
+        1 VMIN> 0 && VTIME> 0
+        VMIN为最少读取的字符数，当读取到一个字符后，会启动一个定时器，在定时器超时事前，如果已经读取到了VMIN个字符，则read返回VMIN个字符。如果在接收到VMIN个字符之前，定时器已经超时，则read返回已读取到的字符，注意这个定时器会在每次读取到一个字符后重新启用，即重新开始计时，而且是读取到第一个字节后才启用，也就是说超时的情况下，至少读取到一个字节数据。
+        2 VMIN > 0 && VTIME== 0
+        在只有读取到VMIN个字符时，read才返回，可能造成read被永久阻塞。
+        3 VMIN == 0 && VTIME> 0
+        和第一种情况稍有不同，在接收到一个字节时或者定时器超时时，read返回。如果是超时这种情况，read返回值是0。
+        4 VMIN == 0 && VTIME== 0
+        这种情况下read总是立即就返回，即不会被阻塞。----by 解释粘贴自博客园
+    */
+    my_cfsetispeed(ter_s, B115200);  // 设置输入波特率
+    my_cfsetospeed(ter_s, B115200);  // 设置输出波特率
+    my_tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
+    if (my_tcsetattr(fd, TCSANOW, ter_s) != 0) {
+        DEBUG("com set error!\r\n");
+    }
+    my_tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
+
+    unsigned char rand[32];
+    get_random_bytes_v1(rand, sizeof rand);
+    temp[0] = 0xA5;
+    temp[1] = 0x5A;
+    temp[2] = 0x20;
+    temp[3] = 0x00;
+    for (int i = 4; i < 36; i++) temp[i] = rand[i - 4] % 2;
+
+    unsigned short int CRC16re = CRC16_Check(temp, 4 + 32);
+
+    int sum = 0;
+    for (int i = 7; i >= 0; i--) {
+        sum = sum * 2 + (CRC16re >> i & 1);
+    }
+
+    temp[36] = CRC16re >> 8;
+    temp[37] = sum;
+    temp[38] = 0xFF;
+
+    ser_data snd_data;
+    ser_data rec_data;
+    snd_data.ser_fd = fd;
+    rec_data.ser_fd = fd;
+
+    memcpy(snd_data.data_buf, temp, SERIAL_SIZE);
+
+    send(snd_data);
+    receive(rec_data);
+    ks_free(ter_s);
+    return 0;
+}
+
+// int common_new_serial(unsigned char serial_send[SERIAL_SIZE]) {
+//     // 进行串口参数设置
+//     termios_t *ter_s = ks_malloc(sizeof(ter_s));
+//     // 不成为控制终端程序，不受其他程序输出输出影响
+//     char *device = "/dev/ttyUSB0";
+//     int fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+//     if (fd < 0) {
+//         DEBUG_FMT("%s open failed\r\n", device);
+//         return -1;
+//     } else {
+//         DEBUG("connection device /dev/ttyUSB0 successful");
+//     }
+
+//     ter_s->c_cflag |= CLOCAL | CREAD;  // 激活本地连接与接受使能
+//     ter_s->c_cflag &= ~CSIZE;          // 失能数据位屏蔽
+//     ter_s->c_cflag |= CS8;             // 8位数据位
+//     ter_s->c_cflag &= ~CSTOPB;         // 1位停止位
+//     ter_s->c_cflag &= ~PARENB;         // 无校验位
+//     ter_s->c_cc[VTIME] = 0;
+//     ter_s->c_cc[VMIN] = 0;
+//     ter_s->c_ispeed = B115200;
+//     ter_s->c_ospeed = B115200;
+
+//     unsigned char rand[32];
+//     get_random_bytes_v1(rand, sizeof rand);
+//     serial_send[0] = 0xA5;
+//     serial_send[1] = 0x5A;
+//     serial_send[2] = 0x20;
+//     serial_send[3] = 0x00;
+//     for (int i = 4; i < 36; i++) serial_send[i] = rand[i - 4] % 2;
+
+//     unsigned short int CRC16re = CRC16_Check(serial_send, 4 + 32);
+
+//     int sum = 0;
+//     for (int i = 7; i >= 0; i--) {
+//         sum = sum * 2 + (CRC16re >> i & 1);
+//     }
+
+//     serial_send[36] = CRC16re >> 8;
+//     serial_send[37] = sum;
+//     serial_send[38] = 0xFF;
+
+//     ser_data snd_data;
+//     ser_data rec_data;
+//     snd_data.ser_fd = fd;
+//     rec_data.ser_fd = fd;
+
+//     memcpy(snd_data.data_buf, serial_send, SERIAL_SIZE);
+//     send(snd_data);
+//     receive(rec_data);
+//     return 0;
+// }
 
 struct trap_point *get_tp(uint64_t addr) {
     struct trap_point *arr = (struct trap_point *)rt_info.data;
@@ -804,6 +939,129 @@ static void handle_thread_exit(struct thread *thread,
     }
 }
 
+void encrypt_memory_range(struct rc4_key *key, void *start, size_t len)
+{
+  struct rc4_state rc4;
+  rc4_init(&rc4, key->bytes, sizeof(key->bytes));
+
+  uint8_t *curr = start;
+  for (size_t i = 0; i < len; i++) {
+    *curr = *curr ^ rc4_get_byte(&rc4);
+    curr++;
+  }
+}
+
+void decrypt_packed_bin(
+        void *packed_bin_start,
+        size_t packed_bin_size,
+        struct rc4_key *key)
+{
+  struct rc4_state rc4;
+  rc4_init(&rc4, key->bytes, sizeof(key->bytes));
+
+  DEBUG_FMT("RC4 decrypting binary with key %s", STRINGIFY_KEY(key));
+
+  unsigned char *curr = packed_bin_start;
+  DEBUG_FMT("debug packed_bin_size %d", packed_bin_size);
+  for (int i = 0; i < packed_bin_size; i++) {
+    *curr = *curr ^ rc4_get_byte(&rc4);
+    curr++;
+  }
+
+  DEBUG_FMT("decrypted %u bytes", packed_bin_size);
+}
+
+void shuffle(unsigned char *arr, int n, unsigned char swap_infos[]) {
+  unsigned char index[n];
+  get_random_bytes_v1(index, n);
+
+  // 洗牌算法
+  for (int i = n - 1; i >= 0; i--) {
+    int j = index[i] % (i + 1);
+    unsigned char temp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = temp;
+    swap_infos[i] = j;
+  }
+}
+
+void external_decryption() {
+    Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *)LOADER_ADDR;
+
+    /* The PHDR in our binary corresponding to the loader (ie. this code) */
+    Elf64_Phdr *loader_phdr = (Elf64_Phdr *)(LOADER_ADDR + us_ehdr->e_phoff);
+
+    /* The PHDR in our binary corresponding to the encrypted app */
+    Elf64_Phdr *packed_bin_phdr = loader_phdr + 1;
+
+    int fd = sys_open("program", O_RDONLY, 0);
+    sys_read(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_memsz);
+    DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
+
+    unsigned char swap_infos[SERIAL_SIZE];
+    sys_read(fd, swap_infos, SERIAL_SIZE);
+
+    unsigned char old_serial_shuffled[SERIAL_SIZE];
+    sys_read(fd, &old_serial_shuffled, sizeof old_serial_shuffled);
+
+    __uint64_t rand[4];
+    sys_read(fd, rand, sizeof rand);
+    sys_close(fd);
+
+    reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);
+
+    common(old_serial_shuffled);
+
+    struct rc4_key old_actual_key;
+    for (int i = 0; i < KEY_SIZE; i++) {
+        old_actual_key.bytes[i] = serial_key[i];
+    }
+
+    uint8_t num = 4;
+
+    for (uint8_t i = 0; i < num; i += 2) {
+        __uint64_t st = rand[i];
+        __uint64_t sz = rand[i + 1];
+        decrypt_packed_bin((void *)(packed_bin_phdr->p_vaddr + st), sz,
+                           &old_actual_key);
+    }
+
+    decrypt_packed_bin((void *)packed_bin_phdr->p_vaddr,
+                       packed_bin_phdr->p_memsz, &old_actual_key);
+
+    unsigned char new_serial_send[SERIAL_SIZE];
+    common_new_serial(new_serial_send);
+
+    struct rc4_key new_actual_key;
+    for (int i = 0; i < KEY_SIZE; i++) {
+        new_actual_key.bytes[i] = serial_key[i];
+    }
+    shuffle(new_serial_send, SERIAL_SIZE, swap_infos);
+
+    for (uint8_t i = 0; i < num; i += 2) {
+        __uint64_t st = rand[i];
+        __uint64_t sz = rand[i + 1];
+        encrypt_memory_range(&new_actual_key,
+                             (void *)(packed_bin_phdr->p_vaddr + st), sz);
+    }
+
+    encrypt_memory_range(&new_actual_key, (void *)packed_bin_phdr->p_vaddr,
+                         packed_bin_phdr->p_memsz);
+
+    fd = sys_open("program", O_RDWR | O_CREAT | O_TRUNC, 777);
+    sys_write(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_memsz);
+
+    sys_write(fd, swap_infos, sizeof swap_infos);
+    sys_write(fd, new_serial_send, sizeof new_serial_send);
+    sys_write(fd, rand, sizeof rand);
+
+    //  struct rc4_key shu_new_key;
+    //  memcpy(shu_new_key.bytes, shuffle_k, sizeof shuffle_k);
+    //  DEBUG_FMT("the program exits normally and is encrypted using the new key
+    //  %s.", STRINGIFY_KEY(&shu_new_key));
+    sys_close(fd);
+}
+
 void runtime_start(pid_t child_pid) {
     DEBUG("starting ptrace runtime");
     // obf_deobf_rt_info(&rt_info);
@@ -880,6 +1138,7 @@ void runtime_start(pid_t child_pid) {
 
             if (tlist.size == 0) {
                 DEBUG("all threads exited, exiting");
+                external_decryption();
                 sys_exit(0);
             }
             continue;
