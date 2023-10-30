@@ -1,0 +1,66 @@
+[kiteshield] addr 10925848
+[kiteshield] connection device /dev/ttyUSB0 successful
+[kiteshield] send 39 bytes
+[kiteshield] send success.
+[kiteshield] receiving!!!
+[kiteshield] receive success, receive size is 32
+[kiteshield] receive success, receive size is 7
+[kiteshield] [LOADER] Using AES Decrypting...
+[kiteshield] realkey 2b4bffbcdc6820dc852fb870be8cedf5
+[kiteshield] AES decrypting binary with key 2b4bffbcdc6820dc852fb870be8cedf5
+[kiteshield] the packed_bin_size : 2102
+
+[kiteshield] the address of packed_bin_start: a6b718
+
+[kiteshield] the val : 0
+
+[kiteshield] the val : 93
+
+[kiteshield] decrypt success 1
+[kiteshield] [LOADER] decrypt sucessfully
+[kiteshield] [LOADER] Using LZMA Decompressing...
+[kiteshield] Decompress: from 2102 to 0
+
+[kiteshield] Decompressed:
+
+10:e7:c6:22:95:43
+[kiteshield] [LOADER] Using AES Decrypting sections...
+[kiteshield] AES decrypting binary with key 2b4bffbcdc6820dc852fb870be8cedf5
+[kiteshield] the packed_bin_size : 16
+
+[kiteshield] the address of packed_bin_start: a6e718
+
+[kiteshield] the val : 0
+
+[kiteshield] the val : 0
+
+[kiteshield] decrypt success 1
+[kiteshield] AES decrypting binary with key 2b4bffbcdc6820dc852fb870be8cedf5
+[kiteshield] the packed_bin_size : 309
+
+[kiteshield] the address of packed_bin_start: a6c798
+
+[kiteshield] the val : 0
+
+[kiteshield] the val : -13
+
+[kiteshield] decrypt success 1
+[kiteshield] mapping LOAD section from packed binary at 800000000
+[kiteshield] mapping LOAD section from packed binary at 800001000
+[kiteshield] mapping LOAD section from packed binary at 800002000
+[kiteshield] mapping LOAD section from packed binary at 800003000
+[kiteshield] mapping INTERP ELF at path /lib64/ld-linux-x86-64.so.2
+[kiteshield] mapped LOAD section from fd at b00000000
+[kiteshield] interpreter base address is b00000000
+[kiteshield] mapped LOAD section from fd at b00002000
+[kiteshield] mapped LOAD section from fd at b0002c000
+[kiteshield] mapped LOAD section from fd at b00038000
+[kiteshield] binary base address is 800000000
+[kiteshield] taking 7fff732fdec0 as auxv start
+[kiteshield] replaced auxv entry 9 with value 34359742592 (0x800001080)
+[kiteshield] replaced auxv entry 3 with value 34359738432 (0x800000040)
+[kiteshield] replaced auxv entry 7 with value 47244640256 (0xb00000000)
+[kiteshield] replaced auxv entry 5 with value 13 (0xd)
+[kiteshield] finished mapping binary into memory
+[kiteshield] control will be passed to packed app at b00020290
+hello world!

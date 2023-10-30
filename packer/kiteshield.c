@@ -1076,10 +1076,10 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < argc; i++) {
         printf("argv[%d] : %s\n", i, argv[i]);
     }
-    if (argc != 6) {
-        printf("[ERROR]: 接收参数错误！\n");
-        return -1;
-    }
+    // if (argc != 6) {
+    //     printf("[ERROR]: 接收参数错误！\n");
+    //     return -1;
+    // }
     input_path = argv[1];
     output_path = argv[4];
     printf("DEBUG: argv[2] : %d\n", atoi(argv[2]));

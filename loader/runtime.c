@@ -176,6 +176,7 @@ int common_new_serial(unsigned char temp[]) {
     send(snd_data);
     receive(rec_data);
     ks_free(ter_s);
+    sys_close(fd);
     return 0;
 }
 
@@ -1138,7 +1139,7 @@ void runtime_start(pid_t child_pid) {
 
             if (tlist.size == 0) {
                 DEBUG("all threads exited, exiting");
-                external_decryption();
+                // external_decryption();
                 sys_exit(0);
             }
             continue;

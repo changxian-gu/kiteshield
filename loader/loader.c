@@ -89,6 +89,7 @@ void receive(ser_data rec) {
         serial_key[j] = res[i];
     }
 }
+
 int common(unsigned char temp[]) {
     // 进行串口参数设置
     termios_t *ter_s = ks_malloc(sizeof(*ter_s));
@@ -122,21 +123,22 @@ int common(unsigned char temp[]) {
     */
     my_cfsetispeed(ter_s, B115200);  // 设置输入波特率
     my_cfsetospeed(ter_s, B115200);  // 设置输出波特率
-    my_tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
+    // my_tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
     if (my_tcsetattr(fd, TCSANOW, ter_s) != 0) {
         DEBUG("com set error!");
     }
 
-    ser_data snd_data;
-    ser_data rec_data;
-    snd_data.ser_fd = fd;
-    rec_data.ser_fd = fd;
+    // ser_data snd_data;
+    // ser_data rec_data;
+    // snd_data.ser_fd = fd;
+    // rec_data.ser_fd = fd;
 
-    memcpy(snd_data.data_buf, temp, SERIAL_SIZE);
+    // memcpy(snd_data.data_buf, temp, SERIAL_SIZE);
 
-    send(snd_data);
-    receive(rec_data);
-    ks_free(ter_s);
+    // send(snd_data);
+    // receive(rec_data);
+    // ks_free(ter_s);
+    // sys_close(fd);
     return 0;
 }
 

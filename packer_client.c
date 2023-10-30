@@ -6,11 +6,7 @@
 #include <unistd.h>
 #include "myargs.h"
 
-#define END_FLAG "##END##"
-#define FLAG_LEN 7
-
 void error_handling(char *message);
-
 
 // args {
 //     char name[32];

@@ -357,8 +357,8 @@ int sys_ioctl(int fd, unsigned long cmd, void *arg) {
         "syscall\n"
         "mov %%eax, %0\n"
         :   "+rm" (ret)
-        :   "rm" (fd), "rm" (cmd), "rm" (arg)
-        :   "rax", "rdi", "rsi", "rdx");
+        :   "r" (fd), "r" (cmd), "r" (arg)
+        :   "rax", "edi", "rsi", "rdx");
 
     return ret;
 }
