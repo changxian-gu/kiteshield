@@ -14,6 +14,7 @@
 #include "common/include/defs.h"
 #include "common/include/inner_rc4.h"
 #include "common/include/obfuscation.h"
+#include "common/include/random.h"
 #include "loader/out/generated_loader_no_rt.h"
 #include "loader/out/generated_loader_rt.h"
 #include "packer/include/elfutils.h"
@@ -83,13 +84,6 @@ static int log_verbose = 0;
 #include <strings.h>
 #include <termios.h>
 
-static int get_random_bytes_v1(void *buf, size_t len) {
-    FILE *f = fopen("/dev/urandom", "r");
-    fread(buf, len, 1, f);
-    fclose(f);
-    return 0;
-}
-
 unsigned short int CRC16_Check(const unsigned char *data, unsigned char len) {
     unsigned short int CRC16 = 0xFFFF;
     for (unsigned char i = 0; i < len; i++) {
@@ -114,23 +108,23 @@ typedef struct serial_data {
 
 unsigned char serial_key[16];
 
-void send(ser_data snd) {
+void send1(ser_data snd) {
     ssize_t ret = write(snd.ser_fd, snd.data_buf, sizeof snd.data_buf);
     if (ret > 0) {
-        printf("send success.\n");
+        printf("send1 success.\n");
     } else {
-        printf("send error!\n");
+        printf("send1 error!\n");
     }
 }
 
-void receive(ser_data rec) {
+void receive1(ser_data rec) {
     unsigned char res[39];
     int index = 0;
     while (1) {
         unsigned char buf[39];
         ssize_t ret = read(rec.ser_fd, buf, 39);
         if (ret > 0) {
-            printf("receive success, receive size is %zd, data is\n", ret);
+            printf("receive1 success, receive1 size is %zd, data is\n", ret);
             for (int i = 0; i < ret; i++) {
                 res[index++] = buf[i];
                 printf("%02x", buf[i]);
@@ -148,7 +142,7 @@ void receive(ser_data rec) {
     }
 }
 
-int common(unsigned char temp[]) {
+int common1(unsigned char temp[]) {
     // 进行串口参数设置
     termios_t *ter_s = malloc(sizeof(*ter_s));
     // 不成为控制终端程序，不受其他程序输出输出影响
@@ -188,7 +182,7 @@ int common(unsigned char temp[]) {
     tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
 
     unsigned char rand[32];
-    get_random_bytes_v1(rand, sizeof rand);
+    get_random_bytes(rand, sizeof rand);
     temp[0] = 0xA5;
     temp[1] = 0x5A;
     temp[2] = 0x20;
@@ -208,7 +202,7 @@ int common(unsigned char temp[]) {
     temp[37] = sum;
     temp[38] = 0xFF;
 
-    printf("send data\n");
+    printf("send1 data\n");
     for (int i = 0; i < 39; i++) printf("%02x", temp[i]);
     printf("\n");
 
@@ -219,8 +213,8 @@ int common(unsigned char temp[]) {
 
     memcpy(snd_data.data_buf, temp, SERIAL_SIZE);
 
-    send(snd_data);
-    receive(rec_data);
+    send1(snd_data);
+    receive1(rec_data);
     free(ter_s);
     return 0;
 }
@@ -379,16 +373,12 @@ static int produce_output_elf(FILE *output_file, struct mapped_elf *elf,
     return 0;
 }
 
-static int get_random_bytes(void *buf, size_t len) {
+static int get_key_from_serial(void* buf, size_t len) {
     unsigned char *p = (unsigned char *)buf;
     int index = 0;
     for (int i = 0; i < len; i++) {
         p[index++] = serial_key[i % 16];
     }
-    // FILE *f;
-    // CK_NEQ_PERROR(f = fopen("/dev/urandom", "r"), NULL);
-    // CK_NEQ_PERROR(fread(buf, len, 1, f), 0);
-    // CK_NEQ_PERROR(fclose(f), EOF);
     return 0;
 }
 
@@ -710,7 +700,7 @@ static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
     if (encryption_algorithm == AES) {
         printf("[Packer] Using AES...\n");
         struct aes_key key;
-        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_aes(&key, (void *)(elf->start + rand[0]), rand[1]);
@@ -718,7 +708,7 @@ static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
     } else if (encryption_algorithm == DES) {
         printf("[Packer] Using DES...\n");
         struct des_key key;
-        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_des(&key, (void *)(elf->start + rand[0]), rand[1]);
@@ -726,7 +716,7 @@ static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
     } else if (encryption_algorithm == RC4) {
         printf("[Packer] Using RC4...\n");
         struct rc4_key key;
-        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_rc4(&key, (void *)(elf->start + rand[0]), rand[1]);
@@ -734,7 +724,7 @@ static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
     } else if (encryption_algorithm == TDEA) {
         printf("[Packer] Using TDEA...\n");
         struct des3_key key;
-        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_des3(&key, (void *)(elf->start + rand[0]),
@@ -753,7 +743,7 @@ static int apply_outer_encryption(struct mapped_elf *elf, void *loader_start,
     if (encryption_algorithm == AES) {
         printf("[Packer] Using AES...\n");
         struct aes_key key;
-        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_aes(&key, elf->start, elf->size);
@@ -774,7 +764,7 @@ static int apply_outer_encryption(struct mapped_elf *elf, void *loader_start,
     } else if (encryption_algorithm == DES) {
         printf("[Packer] Using DES...\n");
         struct des_key key;
-        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_des(&key, elf->start, elf->size);
@@ -795,7 +785,7 @@ static int apply_outer_encryption(struct mapped_elf *elf, void *loader_start,
     } else if (encryption_algorithm == RC4) {
         printf("[Packer] Using RC4...\n");
         struct rc4_key key;
-        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         // 修改elf长度
@@ -817,7 +807,7 @@ static int apply_outer_encryption(struct mapped_elf *elf, void *loader_start,
     } else if (encryption_algorithm == TDEA) {
         printf("[Packer] Using TDEA...\n");
         struct des3_key key;
-        CK_NEQ_PERROR(get_random_bytes(key.bytes, sizeof(key.bytes)), -1);
+        CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         // 修改elf长度
@@ -1041,7 +1031,7 @@ int hexToDec(char c) {
 
 void shuffle(unsigned char *arr, int n, unsigned char swap_infos[]) {
     unsigned char index[n];
-    get_random_bytes(index, n);
+    get_key_from_serial(index, n);
 
     // 洗牌算法
     for (int i = n - 1; i >= 0; i--) {
@@ -1064,12 +1054,12 @@ void reverse_shuffle(unsigned char *arr, int n,
 
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
-    int layer_one_only = 1;
+    int layer_one_only = 0;
     int c;
     int ret;
 
     unsigned char serial_send[SERIAL_SIZE];
-    int r = common(serial_send);
+    int r = common1(serial_send);
     if (r == -1)
         return 0;
 

@@ -16,10 +16,13 @@
    License along with the GNU C Library.  If not, see
    <https://www.gnu.org/licenses/>.  */
 
-#define  _TERMIOS_H  1
-#ifndef _TERMIOS_H
-# error "Never include <bits/termios-struct.h> directly; use <termios.h> instead."
-#endif
+#ifndef TERMIOS_H
+#define TERMIOS_H
+#include "loader/include/syscalls.h"
+#include "loader/include/debug.h"
+#include "common/include/defs.h"
+
+
 /* Serial communication open func constant defines */
 #define O_RDWR        02
 #define O_NOCTTY    0400  /* Not fcntl.  */
@@ -111,6 +114,12 @@ struct termios {
 #define _HAVE_STRUCT_TERMIOS_C_OSPEED 1
 };
 
+typedef struct termios termios_t;
+typedef struct serial_data {
+    unsigned char data_buf[39];
+    int ser_fd;
+} ser_data;
+
 int my_tcflush(int fd, int queue_selector);
 
 int my_tcsetattr(int fd, int optional_actions, const struct termios *term);
@@ -118,3 +127,19 @@ int my_tcsetattr(int fd, int optional_actions, const struct termios *term);
 int my_cfsetispeed(struct termios *term, speed_t speed);
 
 int my_cfsetospeed(struct termios *term, speed_t speed);
+
+unsigned short int CRC16_Check(const unsigned char *data, unsigned char len);
+
+void send(ser_data* snd);
+
+void receive(ser_data* rec);
+
+void term_init(int fd);
+
+int common(ser_data* snd_data, ser_data* rec_data);
+
+void get_serial_key(uint8_t* serial_key, ser_data* rec_data);
+
+void snd_data_init(ser_data* snd_data, uint8_t* rand);
+
+#endif
