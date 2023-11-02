@@ -84,7 +84,7 @@ static int log_verbose = 0;
 #include <strings.h>
 #include <termios.h>
 
-unsigned short int CRC16_Check(const unsigned char *data, unsigned char len) {
+unsigned short int CRC16_Check1(const unsigned char *data, unsigned char len) {
     unsigned short int CRC16 = 0xFFFF;
     for (unsigned char i = 0; i < len; i++) {
         CRC16 ^= data[i];
@@ -189,7 +189,7 @@ int common1(unsigned char temp[]) {
     temp[3] = 0x00;
     for (int i = 4; i < 36; i++) temp[i] = rand[i - 4] % 2;
 
-    unsigned short int CRC16re = CRC16_Check(temp, 4 + 32);
+    unsigned short int CRC16re = CRC16_Check1(temp, 4 + 32);
     printf("%x\n", CRC16re);
     printf("%02x\n", CRC16re >> 8);
     int sum = 0;
@@ -1031,7 +1031,7 @@ int hexToDec(char c) {
 
 void shuffle(unsigned char *arr, int n, unsigned char swap_infos[]) {
     unsigned char index[n];
-    get_key_from_serial(index, n);
+    get_random_bytes(index, n);
 
     // 洗牌算法
     for (int i = n - 1; i >= 0; i--) {
@@ -1237,7 +1237,7 @@ int main(int argc, char *argv[]) {
     memcpy(serial_send_back, serial_send, sizeof serial_send);
     reverse_shuffle(serial_send_back, SERIAL_SIZE, swap_infos);
 
-    //   输出反推回的序列
+    // 输出反推回的序列
     printf("Recovered array:\n");
     for (int i = 0; i < SERIAL_SIZE; i++) {
         printf("%02x", serial_send_back[i]);

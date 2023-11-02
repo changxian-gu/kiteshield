@@ -3,6 +3,7 @@
 #include "common/include/defs.h"
 #include "common/include/obfuscation.h"
 #include "common/include/termios.h"
+#include "common/include/random.h"
 #include "loader/include/anti_debug.h"
 #include "loader/include/debug.h"
 #include "loader/include/elf_auxv.h"
@@ -481,6 +482,20 @@ void printBytes1(const char *msg, unsigned long len) {
     ks_printf(1, "%s", "\n");
 }
 
+void shuffle(unsigned char *arr, int n, unsigned char swap_infos[]) {
+    unsigned char index[n];
+    get_random_bytes(index, n);
+
+    // 洗牌算法
+    for (int i = n - 1; i >= 0; i--) {
+        int j = index[i] % (i + 1);
+        unsigned char temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+        swap_infos[i] = j;
+    }
+}
+
 void reverse_shuffle(unsigned char *arr, int n,
                      const unsigned char swap_infos[]) {
     for (int k = 0; k < n; k++) {
@@ -499,17 +514,36 @@ static int get_key(void *buf, size_t len) {
     return 0;
 }
 
+static void encrypt_memory_range_aes(struct aes_key *key, void *start,
+                                     size_t len) {
+    size_t key_len = sizeof(struct aes_key);
+    DEBUG_FMT("aes key_len : %d\n", key_len);
+    unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
+    DEBUG_FMT("before enc, len : %d\n", len);
+    // 使用DES加密后密文长度可能会大于明文长度怎么办?
+    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
+    unsigned long actual_encrypt_len = len - len % key_len;
+    DEBUG_FMT("actual encrypt len : %d\n", actual_encrypt_len);
+    if (actual_encrypt_len == 0)
+        return;
+    AesContext aes_context;
+    aesInit(&aes_context, key->bytes, key_len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+    aesDeinit(&aes_context);
+}
+
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
     char *device = "/dev/ttyUSB0";
     int usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
     if (usb_fd < 0) {
         DEBUG_FMT("%s open failed\r\n", device);
+        sys_close(usb_fd);
         sys_exit(-1);
     } else {
         DEBUG("connection device /dev/ttyUSB0 successful");
     }
-    sys_close(usb_fd);
     
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
@@ -606,8 +640,8 @@ void *load(void *entry_stacktop) {
     sys_read(fd, &old_serial_shuffled, sizeof old_serial_shuffled);
     //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
 
-    uint64_t rand[4];
-    sys_read(fd, rand, sizeof rand);
+    uint64_t sections[4];
+    sys_read(fd, sections, sizeof sections);
     sys_close(fd);
 
     reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);
@@ -615,8 +649,13 @@ void *load(void *entry_stacktop) {
     // 发送之前初始化
     ser_data snd_data, rec_data;
     memcpy(snd_data.data_buf, old_serial_shuffled, SERIAL_SIZE);
-    common(&snd_data, &rec_data);
-    get_serial_key(&serial_key, &rec_data);
+    term_init(usb_fd);
+    snd_data.ser_fd = usb_fd;
+    rec_data.ser_fd = usb_fd;
+
+    send(&snd_data);
+    receive(&rec_data);
+    get_serial_key(serial_key, &rec_data);
 
     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
      * adjust loader code start and size accordingly */
@@ -657,6 +696,9 @@ void *load(void *entry_stacktop) {
                                 packed_bin_phdr->p_filesz, &actual_key);
     }
     DEBUG("[LOADER] decrypt sucessfully");
+    // 把解密后的内容复制一份
+    uint8_t* bin_new = ks_malloc(packed_bin_phdr->p_filesz);
+    memcpy(bin_new, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
 
     if (compression_algorithm == ZSTD) {
         DEBUG("[LOADER] Using ZSTD Decompressing...");
@@ -753,36 +795,77 @@ void *load(void *entry_stacktop) {
         DEBUG("[LOADER] Using AES Decrypting sections...");
         // 拿到AES的真实KEY
         struct aes_key actual_key;
-        get_key(actual_key.bytes, sizeof(actual_key.bytes));
-        decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + rand[0]),
-                               rand[1], &actual_key);
-        decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + rand[2]),
-                               rand[3], &actual_key);
+        memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
+        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + sections[0]),
+                               sections[1], &actual_key);
+        decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + sections[2]),
+                               sections[3], &actual_key);
     } else if (encryption_algorithm == DES) {
         DEBUG("[LOADER] Using DES Decrypting sections...");
         struct des_key actual_key;
-        get_key(actual_key.bytes, sizeof(actual_key.bytes));
-        decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + rand[0]),
-                               rand[1], &actual_key);
-        decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + rand[2]),
-                               rand[3], &actual_key);
+        memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
+        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + sections[0]),
+                               sections[1], &actual_key);
+        decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + sections[2]),
+                               sections[3], &actual_key);
     } else if (encryption_algorithm == RC4) {
         DEBUG("[LOADER] Using RC4 Decrypting sections...");
         struct rc4_key actual_key;
-        get_key(actual_key.bytes, sizeof(actual_key.bytes));
-        decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + rand[0]),
-                               rand[1], &actual_key);
-        decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + rand[2]),
-                               rand[3], &actual_key);
+        memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
+        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + sections[0]),
+                               sections[1], &actual_key);
+        decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + sections[2]),
+                               sections[3], &actual_key);
     } else if (encryption_algorithm == TDEA) {
         DEBUG("[LOADER] Using TDEA Decrypting sections...");
         struct des3_key actual_key;
-        get_key(actual_key.bytes, sizeof(actual_key.bytes));
-        decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + rand[0]),
-                                rand[1], &actual_key);
-        decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + rand[2]),
-                                rand[3], &actual_key);
+        memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
+        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + sections[0]),
+                                sections[1], &actual_key);
+        decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + sections[2]),
+                                sections[3], &actual_key);
     }
+
+    /*
+        持久化---begin
+        方案：只改变外部加密所用的密钥，外部解密后使用新的密钥进行加密
+    */
+    // 与PUF通信获取密钥
+    uint8_t rand[32];
+    get_random_bytes(rand, 32);
+    snd_data_init(&snd_data, rand);
+    snd_data.ser_fd = usb_fd;
+    rec_data.ser_fd = usb_fd;
+    send(&snd_data);
+    receive(&rec_data);
+    sys_close(usb_fd);
+    get_serial_key(serial_key, &rec_data);
+
+    // 外部加密
+    if (encryption_algorithm == AES) {
+        DEBUG("[Packer] Using AES...");
+        struct aes_key key;
+        get_key(key.bytes, sizeof(key.bytes));
+        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_aes(&key, bin_new, packed_bin_phdr->p_filesz);
+    }
+
+    // 写回program
+    int prog_fd = sys_open("program", O_RDWR, 0777);
+    sys_write(prog_fd, bin_new, packed_bin_phdr->p_filesz);
+    shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
+    sys_write(prog_fd, swap_infos, SERIAL_SIZE);
+    sys_write(prog_fd, snd_data.data_buf, SERIAL_SIZE);
+    sys_close(prog_fd);
+    /*
+        持久化---end
+    */
+
 
     /* Entry point for ld.so if this is not a statically linked binary,
      * otherwise map_elf_from_mem will not touch this and it will be set below.

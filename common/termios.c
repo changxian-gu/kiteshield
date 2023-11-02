@@ -20,7 +20,7 @@ int my_cfsetospeed(struct termios *term, speed_t speed) {
     return my_tcsetattr(0, TCSANOW, term);  // 这里假设文件描述符为0，表示标准输入
 }
 
-unsigned short int cCRC16_Check1(const unsigned char *data, unsigned char len) {
+unsigned short int CRC16_Check(const unsigned char *data, unsigned char len) {
     unsigned short int CRC16 = 0xFFFF;
     for (unsigned char i = 0; i < len; i++) {
         CRC16 ^= data[i];
@@ -108,7 +108,7 @@ void snd_data_init(ser_data* snd_data, uint8_t* rand) {
     snd_data->data_buf[3] = 0x00;
     for (int i = 4; i < 36; i++) snd_data->data_buf[i] = rand[i - 4] % 2;
 
-    unsigned short int CRC16re = cCRC16_Check1(snd_data->data_buf, 4 + 32);
+    unsigned short int CRC16re = CRC16_Check(snd_data->data_buf, 4 + 32);
     int sum = 0;
     for (int i = 7; i >= 0; i--) {
         sum = sum * 2 + (CRC16re >> i & 1);

@@ -972,19 +972,6 @@ void decrypt_packed_bin(
   DEBUG_FMT("decrypted %u bytes", packed_bin_size);
 }
 
-void shuffle(unsigned char *arr, int n, unsigned char swap_infos[]) {
-  unsigned char index[n];
-  get_random_bytes_v1(index, n);
-
-  // 洗牌算法
-  for (int i = n - 1; i >= 0; i--) {
-    int j = index[i] % (i + 1);
-    unsigned char temp = arr[i];
-    arr[i] = arr[j];
-    arr[j] = temp;
-    swap_infos[i] = j;
-  }
-}
 
 // void external_decryption() {
 //     Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *)LOADER_ADDR;
