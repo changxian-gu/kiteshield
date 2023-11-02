@@ -533,6 +533,57 @@ static void encrypt_memory_range_aes(struct aes_key *key, void *start,
     aesDeinit(&aes_context);
 }
 
+static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
+                                     size_t len) {
+    size_t key_len = sizeof(struct rc4_key);
+    DEBUG_FMT("rc4 key_len : %d\n", key_len);
+    unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
+    DEBUG_FMT("before enc, len : d\n", len);
+    unsigned long actual_encrypt_len = len;
+    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    if (actual_encrypt_len == 0)
+        return;
+    Rc4Context rc4_context;
+    rc4Init(&rc4_context, key->bytes, key_len);
+    rc4Cipher(&rc4_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+    rc4Deinit(&rc4_context);
+}
+
+static void encrypt_memory_range_des(struct des_key *key, void *start,
+                                     size_t len) {
+    size_t key_len = sizeof(struct des_key);
+    DEBUG_FMT("des key_len : %d\n", key_len);
+    unsigned char *out = (unsigned char *)ks_malloc(len);
+    DEBUG_FMT("before enc, len : d\n", len);
+    unsigned long actual_encrypt_len = len - len % key_len;
+    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    if (actual_encrypt_len == 0)
+        return;
+    DesContext des_context;
+    desInit(&des_context, key->bytes, key_len);
+    ecbEncrypt(DES_CIPHER_ALGO, &des_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+    desDeinit(&des_context);
+}
+
+static void encrypt_memory_range_des3(struct des3_key *key, void *start,
+                                      size_t len) {
+    size_t key_len = sizeof(struct des3_key);
+    DEBUG_FMT("des3 key_len : %d\n", key_len);
+    unsigned char *out = (unsigned char *)ks_malloc(len);
+    DEBUG_FMT("before enc, len : d\n", len);
+    unsigned long actual_encrypt_len = len - len % key_len;
+    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    if (actual_encrypt_len == 0)
+        return;
+    Des3Context des3_context;
+    des3Init(&des3_context, key->bytes, key_len);
+    ecbEncrypt(DES3_CIPHER_ALGO, &des3_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+    des3Deinit(&des3_context);
+}
+
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
     char *device = "/dev/ttyUSB0";
@@ -853,6 +904,27 @@ void *load(void *entry_stacktop) {
         DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
         /* Encrypt the actual binary */
         encrypt_memory_range_aes(&key, bin_new, packed_bin_phdr->p_filesz);
+    } else if (encryption_algorithm == DES) {
+        DEBUG("[Packer] Using DES...");
+        struct des_key key;
+        get_key(key.bytes, sizeof(key.bytes));
+        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_des(&key, bin_new, packed_bin_phdr->p_filesz);
+    } else if (encryption_algorithm == RC4) {
+        DEBUG("[Packer] Using RC4...");
+        struct rc4_key key;
+        get_key(key.bytes, sizeof(key.bytes));
+        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_rc4(&key, bin_new, packed_bin_phdr->p_filesz);
+    } else if (encryption_algorithm == TDEA) {
+        DEBUG("[Packer] Using TDEA...");
+        struct des3_key key;
+        get_key(key.bytes, sizeof(key.bytes));
+        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_des3(&key, bin_new, packed_bin_phdr->p_filesz);
     }
 
     // 写回program
