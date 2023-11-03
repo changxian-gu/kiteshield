@@ -137,5 +137,9 @@ struct runtime_info {
   uint8_t data[];
 } __attribute__((packed));
 
+
+// 用来存储program后面的辅助信息的长度
+#define PROGRAM_AUX_LEN 39 + 39 + 32 
+
 #endif /* __KITESHIELD_DEFS_H */
 

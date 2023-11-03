@@ -676,23 +676,39 @@ void *load(void *entry_stacktop) {
      * decrypt_packed_bin is called)
      */
     Elf64_Ehdr *packed_bin_ehdr = (Elf64_Ehdr *)(packed_bin_phdr->p_vaddr);
-
+    // 去掉辅助变量的位置，为后面解密与解压提供正确的文件大小
+    packed_bin_phdr->p_filesz -= PROGRAM_AUX_LEN;
     // DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
-    // 获取program中的部分信息
-    int fd = sys_open("program", O_RDONLY, 0);
-    sys_read(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
-    DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
-
     unsigned char swap_infos[SERIAL_SIZE];
-    sys_read(fd, swap_infos, SERIAL_SIZE);
-
     unsigned char old_serial_shuffled[SERIAL_SIZE];
-    sys_read(fd, &old_serial_shuffled, sizeof old_serial_shuffled);
-    //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
-
     uint64_t sections[4];
-    sys_read(fd, sections, sizeof sections);
+    // 获取program中的部分信息
+    int fd = sys_open("./program", O_RDONLY, 0);
+    // 如果当前目录不存在此文件, 首先把packed_bin写入到program中
+    if (fd < 0) {
+        DEBUG("no program , creating program and writing infomation..");
+        fd = sys_open("./program", O_CREAT | O_RDWR, 0777);
+        sys_write(fd, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz + PROGRAM_AUX_LEN);
+        int tmp_p = packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
+        memcpy(swap_infos, tmp_p, SERIAL_SIZE);
+        tmp_p += SERIAL_SIZE;
+        memcpy(old_serial_shuffled, tmp_p, SERIAL_SIZE);
+        tmp_p += SERIAL_SIZE;
+        memcpy(sections, tmp_p, sizeof(sections));
+    } else {
+        sys_read(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
+        DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
+
+        sys_read(fd, swap_infos, SERIAL_SIZE);
+
+        sys_read(fd, old_serial_shuffled, sizeof old_serial_shuffled);
+        //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
+
+        sys_read(fd, sections, sizeof sections);
+    }
+
+    printBytes1(old_serial_shuffled, 39);
     sys_close(fd);
 
     reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);

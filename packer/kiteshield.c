@@ -257,8 +257,8 @@ static int read_input_elf(char *path, struct mapped_elf *elf) {
     CK_NEQ_PERROR(fseek(file, 0L, SEEK_END), -1);
     // 返回位置标识符的当前值(获取文件字节大小)
     CK_NEQ_PERROR(size = ftell(file), -1);
-    // 申请空间
-    CK_NEQ_PERROR(elf_buf = malloc(size), NULL);
+    // 申请空间, 多申请128字节用来保存shuffle等需要的信息
+    CK_NEQ_PERROR(elf_buf = malloc(size + 128), NULL);
     // 将文件指针指向文件开头，偏移0字节
     CK_NEQ_PERROR(fseek(file, 0L, SEEK_SET), -1);
     /**
@@ -355,7 +355,7 @@ static int produce_output_elf(FILE *output_file, struct mapped_elf *elf,
     app_phdr.p_offset = app_offset;
     app_phdr.p_vaddr = PACKED_BIN_ADDR + app_offset; /* Keep vaddr aligned */
     app_phdr.p_paddr = app_phdr.p_vaddr;
-    app_phdr.p_filesz = elf->size;
+    app_phdr.p_filesz = elf->size + PROGRAM_AUX_LEN;
     app_phdr.p_memsz = elf->origin_size;
     app_phdr.p_flags = PF_R | PF_W;
     app_phdr.p_align = 0x200000;
@@ -365,10 +365,11 @@ static int produce_output_elf(FILE *output_file, struct mapped_elf *elf,
     /* Loader code/data */
     CK_NEQ_PERROR(fwrite(loader, loader_size, 1, output_file), 0);
 
-    // 预先分配一部分空间用来包含解密后的可执行文件
     /* Packed application contents */
-    void *app = malloc(elf->size);
-    CK_NEQ_PERROR(fwrite(app, elf->origin_size, 1, output_file), 0);
+    // 写入处理后的文件，写入shuffled，写入swap_infos, 写入sections_arr
+    CK_NEQ_PERROR(fwrite(elf->start, elf->size, 1, output_file), 0);
+    // void *app = malloc(elf->size);
+    // CK_NEQ_PERROR(fwrite(app, elf->origin_size, 1, output_file), 0);
 
     return 0;
 }
@@ -1207,60 +1208,65 @@ int main(int argc, char *argv[]) {
     }
     printf("\n");
 
-    FILE *fp = NULL;
-    fp = fopen("program", "w+");
-    fwrite(elf.start, elf.size, 1, fp);
-    fclose(fp);
+    // FILE *fp = NULL;
+    // fp = fopen("program", "w+");
+    // fwrite(elf.start, elf.size, 1, fp);
+    // fclose(fp);
 
     unsigned char swap_infos[SERIAL_SIZE];
 
-    printf("before shuffled array2:\n");
-    for (int i = 0; i < SERIAL_SIZE; i++) {
-        printf("%02x", serial_send[i]);
-    }
-    printf("\n");
+    // printf("before shuffled array2:\n");
+    // for (int i = 0; i < SERIAL_SIZE; i++) {
+    //     printf("%02x", serial_send[i]);
+    // }
+    // printf("\n");
 
     shuffle(serial_send, SERIAL_SIZE, swap_infos);
 
-    for (int i = 0; i < SERIAL_SIZE; i++) printf("%d ", swap_infos[i]);
-    puts("");
+    // for (int i = 0; i < SERIAL_SIZE; i++) printf("%d ", swap_infos[i]);
 
-    // 输出洗牌后的序列
-    printf("shuffled array:\n");
-    for (int i = 0; i < SERIAL_SIZE; i++) {
-        printf("%02x", serial_send[i]);
-    }
-    printf("\n");
+    // // 输出洗牌后的序列
+    // printf("shuffled array:\n");
+    // for (int i = 0; i < SERIAL_SIZE; i++) {
+    //     printf("%02x", serial_send[i]);
+    // }
+    // printf("\n");
 
-    // 反推回原始序列
-    unsigned char serial_send_back[SERIAL_SIZE];
-    memcpy(serial_send_back, serial_send, sizeof serial_send);
-    reverse_shuffle(serial_send_back, SERIAL_SIZE, swap_infos);
+    // // 反推回原始序列
+    // unsigned char serial_send_back[SERIAL_SIZE];
+    // memcpy(serial_send_back, serial_send, sizeof serial_send);
+    // reverse_shuffle(serial_send_back, SERIAL_SIZE, swap_infos);
 
-    // 输出反推回的序列
-    printf("Recovered array:\n");
-    for (int i = 0; i < SERIAL_SIZE; i++) {
-        printf("%02x", serial_send_back[i]);
-    }
-    printf("\n");
+    // // 输出反推回的序列
+    // printf("Recovered array:\n");
+    // for (int i = 0; i < SERIAL_SIZE; i++) {
+    //     printf("%02x", serial_send_back[i]);
+    // }
+    // printf("\n");
 
-    fp = fopen("program", "a");
-    fwrite(swap_infos, sizeof swap_infos, 1, fp);
-    fclose(fp);
+    // fp = fopen("program", "a");
+    // fwrite(swap_infos, sizeof swap_infos, 1, fp);
+    // fclose(fp);
 
-    fp = fopen("program", "a");
-    fwrite(serial_send, sizeof serial_send, 1, fp);
-    fclose(fp);
+    // fp = fopen("program", "a");
+    // fwrite(serial_send, sizeof serial_send, 1, fp);
+    // fclose(fp);
 
-    // section num
-    fp = fopen("program", "a");
-    fwrite(rand, sizeof rand, 1, fp);
-    fclose(fp);
+    // // section num
+    // fp = fopen("program", "a");
+    // fwrite(rand, sizeof rand, 1, fp);
+    // fclose(fp);
 
     /* Write output ELF */
     FILE *output_file;
     CK_NEQ_PERROR(output_file = fopen(output_path, "w"), NULL);
     ret = produce_output_elf(output_file, &elf, loader, loader_size);
+    // 写入swap_infos, serial_send, rand
+    fwrite(swap_infos, sizeof(swap_infos), 1, output_file);
+    fwrite(serial_send, sizeof(serial_send), 1, output_file);
+    fwrite(rand, sizeof(rand), 1, output_file);
+    printBytes(serial_send, 39);
+
     if (ret == -1) {
         err("could not produce output ELF");
         return -1;
@@ -1275,3 +1281,10 @@ int main(int argc, char *argv[]) {
     ks_malloc_deinit();
     return 0;
 }
+
+/*
+    1 检测当前文件夹有没有program文件，如果没有则从packed_bin中读取然后写入磁盘继续执行，如果有的话，就拷贝到packed_bin中正常执行
+
+    program 文件的结构： 加密的文件本体  shuffed_arr  swap_infos sections 四个部分组成
+    注意事项： 加壳过程中给app segment多分配一点空间用来存储其他的信息（暂定128字节）
+*/
