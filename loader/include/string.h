@@ -25,6 +25,9 @@ size_t strnlen(
         const char *s,
         size_t maxlen);
 
+size_t strlen(
+        const char *s);
+
 void itoa(
         unsigned long val,
         int is_signed,

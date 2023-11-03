@@ -1067,10 +1067,10 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < argc; i++) {
         printf("argv[%d] : %s\n", i, argv[i]);
     }
-    // if (argc != 6) {
-    //     printf("[ERROR]: 接收参数错误！\n");
-    //     return -1;
-    // }
+    if (argc != 7) {
+        printf("[ERROR]: 接收参数错误！\n");
+        return -1;
+    }
     input_path = argv[1];
     output_path = argv[4];
     printf("DEBUG: argv[2] : %d\n", atoi(argv[2]));
@@ -1138,14 +1138,16 @@ int main(int argc, char *argv[]) {
         loader_size = sizeof(GENERATED_LOADER_NO_RT);
     }
 
-    // 写入MAC地址
-    // 拿到loader开头的placeholder
+
     if (strlen(argv[5]) != 17) {
         printf("MAC地址格式错误, 正在退出...\n");
         return -1;
     }
 
     struct key_placeholder place_holder = *((struct key_placeholder *)loader);
+    // 写入网卡名称
+    strcpy(place_holder.nic_name, argv[6]);
+    // 写入mac地址
     uint8_t *mac_buff = argv[5];
     uint8_t one_byte_val = 0;
     int idx = 0;

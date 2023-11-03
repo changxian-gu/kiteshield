@@ -595,6 +595,44 @@ void *load(void *entry_stacktop) {
     } else {
         DEBUG("connection device /dev/ttyUSB0 successful");
     }
+
+    // 获取网卡名称
+    char* nic_name = obfuscated_key.nic_name;
+    char* mac_path_prefix = "/sys/class/net/";
+    char mac_path[128];
+    int mac_path_idx = 0;
+    strncpy(mac_path, mac_path_prefix, 128 - mac_path_idx);
+    mac_path_idx += strlen(mac_path_prefix);
+    strncpy(mac_path + mac_path_idx, nic_name, 128 - mac_path_idx);
+    mac_path_idx += strlen(nic_name);
+    strncpy(mac_path + mac_path_idx, "/address", 128 - mac_path_idx);
+    DEBUG_FMT("the mac path is %s", mac_path);
+
+    // 获取mac地址
+    int macfd = sys_open(mac_path, O_RDONLY, 0);
+    if (macfd < 0) {
+        ks_printf(1, "获取mac地址失败\n");
+        sys_exit(-1);
+    }
+    uint8_t mac_buff[18];
+    sys_read(macfd, mac_buff, 17);
+    sys_close(macfd);
+    mac_buff[17] = '\0';
+    ks_printf(1, "%s\n", mac_buff);
+
+    uint8_t my_mac[6];
+    uint8_t one_byte_val = 0;
+    int idx = 0;
+    for (int i = 0; i < 18; i += 3) {
+        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
+        my_mac[idx++] = one_byte_val;
+    }
+    for (int i = 0; i < 6; i++) {
+        if (obfuscated_key.mac_address[i] != my_mac[i]) {
+            ks_printf(1, "%s", "MAC地址不匹配, 正在退出...\n");
+            sys_exit(-1);
+        }
+    }
     
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
@@ -831,30 +869,6 @@ void *load(void *entry_stacktop) {
                decompressedSize);
     }
 
-    // 获取mac地址
-    int macfd = sys_open("/sys/class/net/enp4s0/address", O_RDONLY, 0);
-    if (macfd < 0) {
-        ks_printf(1, "获取mac地址失败\n");
-        sys_exit(-1);
-    }
-    uint8_t mac_buff[18];
-    sys_read(macfd, mac_buff, 17);
-    mac_buff[17] = '\0';
-    ks_printf(1, "%s\n", mac_buff);
-
-    uint8_t my_mac[6];
-    uint8_t one_byte_val = 0;
-    int idx = 0;
-    for (int i = 0; i < 18; i += 3) {
-        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
-        my_mac[idx++] = one_byte_val;
-    }
-    for (int i = 0; i < 6; i++) {
-        if (obfuscated_key.mac_address[i] != my_mac[i]) {
-            ks_printf(1, "%s", "MAC地址不匹配, 正在退出...\n");
-            sys_exit(-1);
-        }
-    }
 
     // text start, text len, data start, data len
     // 段解密
