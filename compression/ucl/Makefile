@@ -16,6 +16,9 @@ output-dir:
 obj/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
+lib: $(OBJS)
+	ar rcs libucl.a $(OBJS)
+
 obj/%.o: examples/simple.c
 	$(CC) $(CFLAGS) -c $< -o $@
 

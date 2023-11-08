@@ -6,6 +6,13 @@
         "elfutils.h": "c",
         "typeinfo": "c",
         "type_traits": "c",
-        "compare": "c"
+        "compare": "c",
+        "generated_loader_no_rt.h": "c",
+        "generated_loader_rt.h": "c",
+        "inner_rc4.h": "c",
+        "obfuscation.h": "c",
+        "debug.h": "c",
+        "syscalls.h": "c",
+        "types.h": "c"
     }
 }

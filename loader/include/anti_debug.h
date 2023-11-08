@@ -54,7 +54,7 @@ static inline int __attribute__((always_inline)) antidebug_proc_check_traced() {
   if (stat.st_size != 0)
     return 1;
 
-  int fd = sys_open(-100, proc_path, O_RDONLY, 0);
+  int fd = sys_open(proc_path, O_RDONLY, 0);
   DIE_IF_FMT(fd < 0, "could not open %s error %d", proc_path, fd);
 
   char buf[4096]; /* Should be enough to hold any /proc/<pid>/status */

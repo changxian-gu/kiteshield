@@ -202,7 +202,7 @@ static char get_thread_state(pid_t tid) {
   char proc_path[128];
   ks_snprintf(proc_path, sizeof(proc_path), DEOBF_STR(PROC_STAT_FMT), tid);
 
-  int fd = sys_open(-100, proc_path, O_RDONLY, 0);
+  int fd = sys_open(proc_path, O_RDONLY, 0);
   DIE_IF_FMT(fd < 0, "could not open %s error %d", proc_path, fd);
 
   char buf[4096]; /* Should be enough to hold any /proc/<pid>/stat */
@@ -922,11 +922,6 @@ void runtime_start(pid_t child_pid) {
 }
 
 void do_fork() {
-  // char *device = "/dev/ttyUSB0";
-  // if (sys_open(-100, device, O_RDWR | O_NOCTTY | O_NDELAY, 0777) < 0) {
-  //     DEBUG_FMT("%s open faild", device);
-  //     sys_exit(0);
-  // }
   DIE_IF(antidebug_proc_check_traced(), TRACED_MSG);
   pid_t pid = sys_fork();
   DIE_IF_FMT(pid < 0, "fork failed with error %d", pid);
@@ -941,12 +936,6 @@ void do_fork() {
 }
 
 void child_start_ptrace() {
-  // char *device = "/dev/ttyUSB0";
-  // if (sys_open(-100, device, O_RDWR | O_NOCTTY | O_NDELAY, 0777) < 0) {
-  //     DEBUG("/dev/ttyUSB0 open faild");
-  //     sys_exit(0);
-  // }
-
   long ret = sys_ptrace(PTRACE_TRACEME, 0, NULL, NULL);
   DIE_IF_FMT(ret < 0, "child: PTRACE_TRACEME failed with error %d", ret);
 

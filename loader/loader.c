@@ -2,12 +2,11 @@
 
 #include "common/include/defs.h"
 #include "common/include/obfuscation.h"
-
+#include "loader/include/termios.h"
 #include "loader/include/debug.h"
 #include "loader/include/elf_auxv.h"
 #include "loader/include/syscalls.h"
 #include "loader/include/types.h"
-#include "loader/include/termios-struct.h"
 #include "loader/include/anti_debug.h"
 
 // include encryption headers
@@ -16,15 +15,14 @@
 #include "cipher/des3.h"
 #include "cipher/rc4.h"
 #include "cipher_modes/ecb.h"
-
 #include "rng/yarrow.h"
 #include "pkc/rsa.h"
 
 // include compression headers
 #include "compression/lzma/Lzma.h"
 #include "compression/lzo/minilzo.h"
-#include "compression/zstd/zstd.h"
 #include "compression/ucl/include/ucl.h"
+#include "compression/zstd/zstd.h"
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1 << PAGE_SHIFT)
@@ -34,30 +32,22 @@
 #define PAGE_ALIGN_UP(ptr) ((((ptr)-1) & PAGE_MASK) + PAGE_SIZE)
 #define PAGE_OFFSET(ptr) ((ptr) & ~(PAGE_MASK))
 
-enum Encryption {
-    RC4 = 1,
-    DES,
-    TDEA,
-    AES
-};
-enum Compression {
-    LZMA = 1,
-    LZO,
-    UCL,
-    ZSTD
-};
-
-// 串口
-typedef struct termios termios_t;
-typedef struct serial_data {
-  unsigned char databuf[132]; // 发送/接受数据
-  int serfd;                  // 串口文件描述符
-} ser_Data;
-char key[128];
+unsigned char serial_key[16];
 
 struct key_placeholder obfuscated_key  __attribute__((aligned(1), section(".key")));
 
 YarrowContext yarrowContext __attribute__((weak));
+
+int get_random_bytes(void *buf, int len) {
+    int fd = sys_open("/dev/urandom", 0, 0);
+    if (fd < 0) {
+        DEBUG("open /dev/urandom error, exiting.");
+        sys_exit(-1);
+    }
+    sys_read(fd, buf, len);
+    sys_close(fd);
+    return 0;
+}
 
 static void *map_load_section_from_mem(void *elf_start, Elf64_Phdr phdr) {
   uint64_t base_addr =
@@ -176,7 +166,7 @@ static void *map_load_section_from_fd(int fd, Elf64_Phdr phdr, int absolute) {
 
 static void map_interp(void *path, void **entry, void **interp_base) {
   DEBUG_FMT("mapping INTERP ELF at path %s", path);
-  int interp_fd = sys_open(-100, path, O_RDONLY, 0);
+  int interp_fd = sys_open(path, O_RDONLY, 0);
   DIE_IF(interp_fd < 0, "could not open interpreter binary");
 
   Elf64_Ehdr ehdr;
@@ -278,128 +268,6 @@ static void setup_auxv(void *argv_start, void *entry, void *phdr_addr,
   replace_auxv_ent(auxv_start, AT_PHDR, (unsigned long long)phdr_addr);
   replace_auxv_ent(auxv_start, AT_BASE, (unsigned long long)interp_base);
   replace_auxv_ent(auxv_start, AT_PHNUM, phnum);
-}
-
-int str_len(const char *str) {
-    int count = 0;
-    while (*str != '\0') {
-        str++;
-        count++;
-    }
-    return count;
-}
-
-void sersend(ser_Data snd) {
-    int ret;
-    ret = sys_write(snd.serfd, snd.databuf, 132 * 8);
-    if (ret > 0) {
-        DEBUG("send success.");
-    } else {
-        DEBUG("send error!");
-    }
-}
-
-void serrecv(ser_Data rec) {
-    int ret;
-    char res[150];
-    int index = 0;
-    char buf[512];
-    while (1) {
-      ret = sys_read(rec.serfd, buf, 512);
-        if (ret > 0) {
-            buf[ret] = '\0';
-            DEBUG_FMT("recv success.\n"
-                      "recv size is %d, data is %s", ret, buf);
-            for (int i = 0; i < ret; ++i) res[index++] = buf[i];
-        }
-        if (index == 134) {
-            res[index] = '\0';
-            break;
-        }
-    }
-    DEBUG_FMT("PUF chip response:\n%s", res);
-    for (int i = 7, j = 0; i < 134; i++, j++) {
-        key[j] = res[i];
-//    printf("%d %c\n", j, res[i]);
-    }
-    key[127] = '1';
-    DEBUG_FMT("Secret key:\n%s", key);
-}
-
-
-int serial_communication() {
-    ks_malloc_init();
-    int serportfd;
-    /*   进行串口参数设置  */
-    termios_t *ter_s = ks_malloc(sizeof(ter_s));
-    char* dev = "/dev/ttyUSB0";
-    //不成为控制终端程序，不受其他程序输出输出影响
-    serportfd = sys_open(-100, dev, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
-    DEBUG_FMT("The result of opening the serial port device: %d", serportfd);
-    if (serportfd < 0) {
-        DEBUG_FMT("%s open faild", dev);
-        return -1;
-    } else {
-        DEBUG_FMT("connection device %s successful", dev);
-    }
-//    bzero(ter_s, sizeof(ter_s));
-
-    ter_s->c_cflag |= CLOCAL | CREAD; //激活本地连接与接受使能
-    ter_s->c_cflag &= ~CSIZE;//失能数据位屏蔽
-    ter_s->c_cflag |= CS8;//8位数据位
-    ter_s->c_cflag &= ~CSTOPB;//1位停止位
-    ter_s->c_cflag &= ~PARENB;//无校验位
-    ter_s->c_cc[VTIME] = 0;
-    ter_s->c_cc[VMIN] = 0;
-    /*
-        1 VMIN> 0 && VTIME> 0
-        VMIN为最少读取的字符数，当读取到一个字符后，会启动一个定时器，在定时器超时事前，如果已经读取到了VMIN个字符，则read返回VMIN个字符。如果在接收到VMIN个字符之前，定时器已经超时，则read返回已读取到的字符，注意这个定时器会在每次读取到一个字符后重新启用，即重新开始计时，而且是读取到第一个字节后才启用，也就是说超时的情况下，至少读取到一个字节数据。
-        2 VMIN > 0 && VTIME== 0
-        在只有读取到VMIN个字符时，read才返回，可能造成read被永久阻塞。
-        3 VMIN == 0 && VTIME> 0
-        和第一种情况稍有不同，在接收到一个字节时或者定时器超时时，read返回。如果是超时这种情况，read返回值是0。
-        4 VMIN == 0 && VTIME== 0
-        这种情况下read总是立即就返回，即不会被阻塞。----by 解释粘贴自博客园
-    */
-    //设置输入波特率
-    ter_s->c_ispeed = B115200;
-//    cfsetispeed(ter_s, B115200);
-    //设置输出波特率
-    ter_s->c_ospeed = B115200;
-//    cfsetospeed(ter_s, B115200);
-//  tcflush(serport1fd, TCIFLUSH);//刷清未处理的输入和/或输出
-//    if (tcsetattr(serport1fd, TCSANOW, ter_s) != 0) {
-//        printf("com set error!\r\n");
-//    }
-
-    unsigned char temp[132];
-    char *helpdata0 = "AA BB 01 00 01 00 00 01 00 00 00 01 00 00 01 00 00 00 01 01 01 00 01 00 00 00 01 00 00 00 00 00 01 00 00 01 00 01 00 00 01 00 00 01 01 01 00 01 00 00 01 00 00 01 00 00 00 01 00 01 01 01 01 00 00 00 01 00 01 00 00 01 00 00 00 00 01 01 01 00 00 01 00 01 00 00 00 01 01 01 01 01 01 00 01 01 01 00 00 01 01 00 00 01 01 00 00 00 01 01 00 01 00 00 01 01 00 00 01 01 01 00 01 01 01 00 00 00 00 00 EE FF";
-    int len = str_len(helpdata0);
-    DEBUG_FMT("data len:%d", len);
-    int index = 0;
-    for (int i = 0; i + 1 < len; i += 3) {
-        int data = 0;
-        for(int j = i; j < i + 2; j++) {
-            data *= 16;
-            if(helpdata0[j] >= 'A' && helpdata0[j] <= 'Z') {
-                data += helpdata0[j] - 'A' + 10;
-            } else if(helpdata0[j] >= '0' && helpdata0[j] <= '9'){
-                data += helpdata0[j] - '0';
-            }
-        }
-//        DEBUG_FMT("%d ", data);
-        temp[index++] = data;
-    }
-    ser_Data snd_data;
-    ser_Data rec_data;
-    snd_data.serfd = serportfd;
-    rec_data.serfd = serportfd;
-    //拷贝发送数据
-    memcpy(snd_data.databuf, temp, str_len(temp));
-    sersend(snd_data);
-    serrecv(rec_data);
-    ks_free(ter_s);
-    return 0;
 }
 
 static void decrypt_packed_bin_aes(
@@ -641,7 +509,163 @@ void printBytes1(const char* msg, unsigned long len) {
     ks_printf(1, "%s", "\n");
 }
 
+void shuffle(unsigned char *arr, int n, unsigned char swap_infos[]) {
+    unsigned char index[n];
+    get_random_bytes(index, n);
+
+    // 洗牌算法
+    for (int i = n - 1; i >= 0; i--) {
+        int j = index[i] % (i + 1);
+        unsigned char temp = arr[i];
+        arr[i] = arr[j];
+        arr[j] = temp;
+        swap_infos[i] = j;
+    }
+}
+
+void reverse_shuffle(unsigned char *arr, int n,
+                     const unsigned char swap_infos[]) {
+    for (int k = 0; k < n; k++) {
+        unsigned char temp = arr[k];
+        arr[k] = arr[swap_infos[k]];
+        arr[swap_infos[k]] = temp;
+    }
+}
+
+static int get_key(void *buf, size_t len) {
+    unsigned char *p = (unsigned char *)buf;
+    int index = 0;
+    for (int i = 0; i < len; i++) {
+        p[index++] = serial_key[i % 16];
+    }
+    return 0;
+}
+
+static void encrypt_memory_range_aes(struct aes_key *key, void *start,
+                                     size_t len) {
+    size_t key_len = sizeof(struct aes_key);
+    DEBUG_FMT("aes key_len : %d\n", key_len);
+    unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
+    DEBUG_FMT("before enc, len : %d\n", len);
+    // 使用DES加密后密文长度可能会大于明文长度怎么办?
+    // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
+    unsigned long actual_encrypt_len = len - len % key_len;
+    DEBUG_FMT("actual encrypt len : %d\n", actual_encrypt_len);
+    if (actual_encrypt_len == 0)
+        return;
+    AesContext aes_context;
+    aesInit(&aes_context, key->bytes, key_len);
+    ecbEncrypt(AES_CIPHER_ALGO, &aes_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+    aesDeinit(&aes_context);
+}
+
+static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
+                                     size_t len) {
+    size_t key_len = sizeof(struct rc4_key);
+    DEBUG_FMT("rc4 key_len : %d\n", key_len);
+    unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
+    DEBUG_FMT("before enc, len : d\n", len);
+    unsigned long actual_encrypt_len = len;
+    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    if (actual_encrypt_len == 0)
+        return;
+    Rc4Context rc4_context;
+    rc4Init(&rc4_context, key->bytes, key_len);
+    rc4Cipher(&rc4_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+    rc4Deinit(&rc4_context);
+}
+
+static void encrypt_memory_range_des(struct des_key *key, void *start,
+                                     size_t len) {
+    size_t key_len = sizeof(struct des_key);
+    DEBUG_FMT("des key_len : %d\n", key_len);
+    unsigned char *out = (unsigned char *)ks_malloc(len);
+    DEBUG_FMT("before enc, len : d\n", len);
+    unsigned long actual_encrypt_len = len - len % key_len;
+    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    if (actual_encrypt_len == 0)
+        return;
+    DesContext des_context;
+    desInit(&des_context, key->bytes, key_len);
+    ecbEncrypt(DES_CIPHER_ALGO, &des_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+    desDeinit(&des_context);
+}
+
+static void encrypt_memory_range_des3(struct des3_key *key, void *start,
+                                      size_t len) {
+    size_t key_len = sizeof(struct des3_key);
+    DEBUG_FMT("des3 key_len : %d\n", key_len);
+    unsigned char *out = (unsigned char *)ks_malloc(len);
+    DEBUG_FMT("before enc, len : d\n", len);
+    unsigned long actual_encrypt_len = len - len % key_len;
+    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    if (actual_encrypt_len == 0)
+        return;
+    Des3Context des3_context;
+    des3Init(&des3_context, key->bytes, key_len);
+    ecbEncrypt(DES3_CIPHER_ALGO, &des3_context, start, out, actual_encrypt_len);
+    memcpy(start, out, actual_encrypt_len);
+    des3Deinit(&des3_context);
+}
+
 void *load(void *entry_stacktop) {
+    char bufff[1024];
+    get_random_bytes(bufff, 1024);
+
+
+    enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
+    enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
+    char *device = "/dev/ttyUSB0";
+    int usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+    if (usb_fd < 0) {
+        DEBUG_FMT("%s open failed\r\n", device);
+        sys_close(usb_fd);
+        sys_exit(-1);
+    } else {
+        DEBUG("connection device /dev/ttyUSB0 successful");
+    }
+
+    // 获取网卡名称
+    char* nic_name = obfuscated_key.nic_name;
+    char* mac_path_prefix = "/sys/class/net/";
+    char mac_path[128];
+    int mac_path_idx = 0;
+    strncpy(mac_path, mac_path_prefix, 128 - mac_path_idx);
+    mac_path_idx += strlen(mac_path_prefix);
+    strncpy(mac_path + mac_path_idx, nic_name, 128 - mac_path_idx);
+    mac_path_idx += strlen(nic_name);
+    strncpy(mac_path + mac_path_idx, "/address", 128 - mac_path_idx);
+    DEBUG_FMT("the mac path is %s", mac_path);
+
+    // 获取mac地址
+    int macfd = sys_open(mac_path, O_RDONLY, 0);
+    if (macfd < 0) {
+        ks_printf(1, "获取mac地址失败\n");
+        sys_exit(-1);
+    }
+    uint8_t mac_buff[18];
+    sys_read(macfd, mac_buff, 17);
+    sys_close(macfd);
+    mac_buff[17] = '\0';
+    ks_printf(1, "%s\n", mac_buff);
+
+    uint8_t my_mac[6];
+    uint8_t one_byte_val = 0;
+    int idx = 0;
+    for (int i = 0; i < 18; i += 3) {
+        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
+        my_mac[idx++] = one_byte_val;
+    }
+    for (int i = 0; i < 6; i++) {
+        if (obfuscated_key.mac_address[i] != my_mac[i]) {
+            ks_printf(1, "%s", "MAC地址不匹配, 正在退出...\n");
+            sys_exit(-1);
+        }
+    }
+
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
     if (antidebug_proc_check_traced())
@@ -655,20 +679,20 @@ void *load(void *entry_stacktop) {
      * this again post-fork just in case this inlined call is patched out. */
     antidebug_rlimit_set_zero_core();
 
-    // 解析出Rsa私钥，并对对称密钥解密
-    RsaPrivateKey private_key;
-    rsaInitPrivateKey(&private_key);
-    obfuscated_key.rsa_key_args_len.data = obfuscated_key.my_rsa_key;
-    rsaPrivateKeyParse(&obfuscated_key.rsa_key_args_len, &private_key);
-    uint8_t output[1024];
-    // C 语言中传参一定要类型相同，尽量避免类型转换，message_len 定义为int*与形参size_t*不同，会导致严重错误
-    // 如果函数内使用指针解引用message_len,会把后面4个与自己无关的字节包含，导致值错误
-    size_t message_len = 117;
-    char* cipher = obfuscated_key.bytes;
-    int cipher_len = 128;
-    error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 1024, &message_len);
-    DEBUG_FMT("decrypt error:%d", error);
-    memcpy(obfuscated_key.bytes, output, 128);
+    // // 解析出Rsa私钥，并对对称密钥解密
+    // RsaPrivateKey private_key;
+    // rsaInitPrivateKey(&private_key);
+    // obfuscated_key.rsa_key_args_len.data = obfuscated_key.my_rsa_key;
+    // rsaPrivateKeyParse(&obfuscated_key.rsa_key_args_len, &private_key);
+    // uint8_t output[1024];
+    // // C 语言中传参一定要类型相同，尽量避免类型转换，message_len 定义为int*与形参size_t*不同，会导致严重错误
+    // // 如果函数内使用指针解引用message_len,会把后面4个与自己无关的字节包含，导致值错误
+    // size_t message_len = 117;
+    // char* cipher = obfuscated_key.bytes;
+    // int cipher_len = 128;
+    // error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 1024, &message_len);
+    // DEBUG_FMT("decrypt error:%d", error);
+    // memcpy(obfuscated_key.bytes, output, 128);
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
@@ -676,36 +700,10 @@ void *load(void *entry_stacktop) {
     char **argv = ((char **) entry_stacktop) + 1;
     enum Encryption encryption_algorithm = AES;
     enum Compression compression_algorithm = ZSTD;
+    
     // get the alogorithm type
-    switch (obfuscated_key.encryption) {
-        case 1:
-            encryption_algorithm = RC4;
-            break;
-        case 2:
-            encryption_algorithm = DES;
-            break;
-        case 3:
-            encryption_algorithm = TDEA;
-            break;
-        case 4:
-            encryption_algorithm = AES;
-            break;
-    }
-
-    switch (obfuscated_key.compression) {
-        case 1:
-            compression_algorithm = LZMA;
-            break;
-        case 2:
-            compression_algorithm = LZO;
-            break;
-        case 3:
-            compression_algorithm = UCL;
-            break;
-        case 4:
-            compression_algorithm = ZSTD;
-            break;
-    }
+    encryption_algorithm = mapToEncryptionEnum[obfuscated_key.encryption];
+    compression_algorithm = mapToCompressionEnum[obfuscated_key.compression];
 
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     // hello_world_pak
@@ -722,10 +720,53 @@ void *load(void *entry_stacktop) {
      * decrypt_packed_bin is called)
      */
     Elf64_Ehdr *packed_bin_ehdr = (Elf64_Ehdr *) (packed_bin_phdr->p_vaddr);
+    // 去掉辅助变量的位置，为后面解密与解压提供正确的文件大小
+    packed_bin_phdr->p_filesz -= PROGRAM_AUX_LEN;
+    // DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
-    DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
+    unsigned char swap_infos[SERIAL_SIZE];
+    unsigned char old_serial_shuffled[SERIAL_SIZE];
+    uint64_t sections[4];
+    // 获取program中的部分信息
+    int fd = sys_open("./program", O_RDONLY, 0);
+    // 如果当前目录不存在此文件, 首先把packed_bin写入到program中
+    if (fd < 0) {
+        DEBUG("no program , creating program and writing infomation..");
+        fd = sys_open("./program", O_CREAT | O_RDWR, 0777);
+        sys_write(fd, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz + PROGRAM_AUX_LEN);
+        int tmp_p = packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
+        memcpy(swap_infos, tmp_p, SERIAL_SIZE);
+        tmp_p += SERIAL_SIZE;
+        memcpy(old_serial_shuffled, tmp_p, SERIAL_SIZE);
+        tmp_p += SERIAL_SIZE;
+        memcpy(sections, tmp_p, sizeof(sections));
+    } else {
+        sys_read(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
+        DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
 
+        sys_read(fd, swap_infos, SERIAL_SIZE);
 
+        sys_read(fd, old_serial_shuffled, sizeof old_serial_shuffled);
+        //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
+
+        sys_read(fd, sections, sizeof sections);
+    }
+
+    printBytes1(old_serial_shuffled, 39);
+    sys_close(fd);
+
+    reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);
+
+    // 发送之前初始化
+    ser_data snd_data, rec_data;
+    memcpy(snd_data.data_buf, old_serial_shuffled, SERIAL_SIZE);
+    term_init(usb_fd);
+    snd_data.ser_fd = usb_fd;
+    rec_data.ser_fd = usb_fd;
+
+    send(&snd_data);
+    receive(&rec_data);
+    get_serial_key(serial_key, &rec_data);
 
 
     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
@@ -736,31 +777,34 @@ void *load(void *entry_stacktop) {
 
     if (encryption_algorithm == AES) {
         DEBUG("[LOADER] Using AES Decrypting...");
-        // 拿到AES的真实KEY
         struct aes_key actual_key;
-        loader_outer_key_deobfuscate_aes(&obfuscated_key, &actual_key, loader_start, loader_size);
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_aes((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == DES) {
         DEBUG("[LOADER] Using DES Decrypting...");
         struct des_key actual_key;
-        loader_outer_key_deobfuscate_des(&obfuscated_key, &actual_key, loader_start, loader_size);
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == RC4) {
         DEBUG("[LOADER] Using RC4 Decrypting...");
         struct rc4_key actual_key;
-        loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key, loader_start, loader_size);
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == TDEA) {
         DEBUG("[LOADER] Using TDEA Decrypting...");
         struct des3_key actual_key;
-        loader_outer_key_deobfuscate_des3(&obfuscated_key, &actual_key, loader_start, loader_size);
+        get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz,&actual_key);
     }
     DEBUG("[LOADER] decrypt sucessfully");
+
+    // 把解密后的内容复制一份
+    uint8_t* bin_new = ks_malloc(packed_bin_phdr->p_filesz);
+    memcpy(bin_new, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
 
     if (compression_algorithm == ZSTD) {
         DEBUG("[LOADER] Using ZSTD Decompressing...");
@@ -815,30 +859,103 @@ void *load(void *entry_stacktop) {
     }
 
 
-    // 获取mac地址
-    int macfd = sys_open(-100, "/sys/class/net/eth0/address", O_RDONLY, 0);
-    if (macfd < 0) {
-        ks_printf(1, "获取mac地址失败\n");
-        sys_exit(-1);
+    // text start, text len, data start, data len
+    // 段解密
+    if (encryption_algorithm == AES) {
+        DEBUG("[LOADER] Using AES Decrypting sections...");
+        // 拿到AES的真实KEY
+        struct aes_key actual_key;
+        memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
+        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + sections[0]),
+                               sections[1], &actual_key);
+        decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + sections[2]),
+                               sections[3], &actual_key);
+    } else if (encryption_algorithm == DES) {
+        DEBUG("[LOADER] Using DES Decrypting sections...");
+        struct des_key actual_key;
+        memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
+        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + sections[0]),
+                               sections[1], &actual_key);
+        decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + sections[2]),
+                               sections[3], &actual_key);
+    } else if (encryption_algorithm == RC4) {
+        DEBUG("[LOADER] Using RC4 Decrypting sections...");
+        struct rc4_key actual_key;
+        memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
+        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + sections[0]),
+                               sections[1], &actual_key);
+        decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + sections[2]),
+                               sections[3], &actual_key);
+    } else if (encryption_algorithm == TDEA) {
+        DEBUG("[LOADER] Using TDEA Decrypting sections...");
+        struct des3_key actual_key;
+        memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
+        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + sections[0]),
+                                sections[1], &actual_key);
+        decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + sections[2]),
+                                sections[3], &actual_key);
     }
-    uint8_t mac_buff[18];
-    sys_read(macfd, mac_buff, 17);
-    mac_buff[17] = '\0';
-    ks_printf(1, "%s\n", mac_buff);
 
-    uint8_t my_mac[6];
-    uint8_t one_byte_val = 0;
-    int idx = 0;
-    for (int i = 0; i < 18; i += 3) {
-        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
-        my_mac[idx++] = one_byte_val;
+    /*
+        持久化---begin
+        方案：只改变外部加密所用的密钥，外部解密后使用新的密钥进行加密
+    */
+    // 与PUF通信获取密钥
+    uint8_t rand[32];
+    get_random_bytes(rand, 32);
+    snd_data_init(&snd_data, rand);
+    snd_data.ser_fd = usb_fd;
+    rec_data.ser_fd = usb_fd;
+    send(&snd_data);
+    receive(&rec_data);
+    sys_close(usb_fd);
+    get_serial_key(serial_key, &rec_data);
+
+    // 外部加密
+    if (encryption_algorithm == AES) {
+        DEBUG("[Packer] Using AES...");
+        struct aes_key key;
+        get_key(key.bytes, sizeof(key.bytes));
+        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_aes(&key, bin_new, packed_bin_phdr->p_filesz);
+    } else if (encryption_algorithm == DES) {
+        DEBUG("[Packer] Using DES...");
+        struct des_key key;
+        get_key(key.bytes, sizeof(key.bytes));
+        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_des(&key, bin_new, packed_bin_phdr->p_filesz);
+    } else if (encryption_algorithm == RC4) {
+        DEBUG("[Packer] Using RC4...");
+        struct rc4_key key;
+        get_key(key.bytes, sizeof(key.bytes));
+        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_rc4(&key, bin_new, packed_bin_phdr->p_filesz);
+    } else if (encryption_algorithm == TDEA) {
+        DEBUG("[Packer] Using TDEA...");
+        struct des3_key key;
+        get_key(key.bytes, sizeof(key.bytes));
+        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
+        /* Encrypt the actual binary */
+        encrypt_memory_range_des3(&key, bin_new, packed_bin_phdr->p_filesz);
     }
-    for (int i = 0; i < 6; i++) {
-        if (obfuscated_key.mac_address[i] != my_mac[i]) {
-            ks_printf(1, "%s", "MAC地址不匹配, 正在退出...\n");
-            sys_exit(-1);
-        }
-    }
+
+    // 写回program
+    int prog_fd = sys_open("program", O_RDWR, 0777);
+    sys_write(prog_fd, bin_new, packed_bin_phdr->p_filesz);
+    shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
+    sys_write(prog_fd, swap_infos, SERIAL_SIZE);
+    sys_write(prog_fd, snd_data.data_buf, SERIAL_SIZE);
+    sys_close(prog_fd);
+    /*
+        持久化---end
+    */
 
     /* Entry point for ld.so if this is not a statically linked binary, otherwise
      * map_elf_from_mem will not touch this and it will be set below. */

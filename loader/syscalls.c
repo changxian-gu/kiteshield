@@ -60,9 +60,9 @@ off_t sys_lseek(int fd, off_t offset, int whence)
   return ret;
 }
 
-int sys_open(int dirfd, const char *pathname, int flags, int mode)
-{
+int sys_open(const char *pathname, int flags, int mode) {
   int ret = 0;
+  int dirfd = AT_FDCWD; // 默认的目录文件描述符，表示当前工作目录
 
   asm volatile(
       "mov x0, %[val0]\n"
@@ -407,6 +407,26 @@ int sys_setrlimit(int resource, struct rlimit *rlim)
       "mov %[result], x0"
       :[result]"=r"(ret)
       :[val0]"r"(resource),[val1]"r"(rlim)
+  );
+
+  return ret;
+}
+
+int sys_ioctl(int fd, unsigned int request, void *arg)
+{
+  int ret = 0;
+
+  asm volatile(
+      "mov x0, %[val0]\n"
+      "mov x1, %[val1]\n"
+      "mov x2, %[val2]\n"
+      "stp x29, x30, [sp, -16]!\n"
+      "mov x8, #29 \n"   // 29 is the syscall number for ioctl on ARM Linux
+      "svc #0 \n"
+      "ldp x29, x30, [sp], 16\n"
+      "mov %[result], x0"
+      :[result]"=r"(ret)
+      :[val0]"r"(fd), [val1]"r"(request), [val2]"r"(arg)
   );
 
   return ret;

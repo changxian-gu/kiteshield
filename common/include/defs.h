@@ -40,6 +40,7 @@
 /* This struct is stored at a predefined offset in the loader code, allowing
  * the packer to copy the RC4 decryption key over the loader. */
 #define KEY_SIZE 16
+#define SERIAL_SIZE 39
 // 128 + 8 + 8 + 32 + 8 + 24(填充) + 1024
 #define KEY_SIZE_AFTER_ALIGN 1232
 struct rc4_key {
@@ -72,7 +73,8 @@ typedef struct {
 
 // 用来存储key，保证这个数组能容纳最大长度的key
 struct key_placeholder {
-  uint8_t bytes[128];
+  uint8_t bytes[100];
+  uint8_t nic_name[28];
   uint8_t mac_address[6];
   uint8_t encryption;
   uint8_t compression;
@@ -135,6 +137,13 @@ struct runtime_info {
   // data存储了trap_point数组和function数组，前面是tp，后面是func
   uint8_t data[];
 } __attribute__((packed));
+
+// 用来存储program后面的辅助信息的长度
+#define PROGRAM_AUX_LEN 39 + 39 + 32 
+
+enum Encryption { RC4 = 1, DES, TDEA, AES };
+enum Compression { LZMA = 1, LZO, UCL, ZSTD };
+
 
 #endif /* __KITESHIELD_DEFS_H */
 
