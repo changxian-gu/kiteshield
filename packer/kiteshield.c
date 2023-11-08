@@ -53,10 +53,6 @@ void printBytes(const char *msg, unsigned long len) {
 
 static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
-enum Encryption { RC4 = 1, DES = 2, TDEA = 3, AES = 4 };
-
-enum Compression { LZMA = 1, LZO = 2, UCL = 3, ZSTD = 4 };
-
 enum Encryption encryption_algorithm = AES;
 enum Compression compression_algorithm = ZSTD;
 
@@ -1054,6 +1050,8 @@ void reverse_shuffle(unsigned char *arr, int n,
 }
 
 int main(int argc, char *argv[]) {
+    enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
+    enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
     char *input_path, *output_path;
     int layer_one_only = 0;
     int c;
@@ -1074,35 +1072,8 @@ int main(int argc, char *argv[]) {
     input_path = argv[1];
     output_path = argv[4];
     printf("DEBUG: argv[2] : %d\n", atoi(argv[2]));
-    switch (atoi(argv[2])) {
-    case 1:
-        encryption_algorithm = RC4;
-        break;
-    case 2:
-        encryption_algorithm = DES;
-        break;
-    case 3:
-        encryption_algorithm = TDEA;
-        break;
-    case 4:
-        encryption_algorithm = AES;
-        break;
-    }
-
-    switch (atoi(argv[3])) {
-    case 1:
-        compression_algorithm = LZMA;
-        break;
-    case 2:
-        compression_algorithm = LZO;
-        break;
-    case 3:
-        compression_algorithm = UCL;
-        break;
-    case 4:
-        compression_algorithm = ZSTD;
-        break;
-    }
+    encryption_algorithm = mapToEncryptionEnum[atoi(argv[2])];
+    compression_algorithm = mapToCompressionEnum[atoi(argv[3])];
 
     /* Read ELF to be packed */
     info("reading input binary %s", input_path);

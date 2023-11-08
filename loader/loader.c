@@ -34,9 +34,6 @@
 #define PAGE_ALIGN_UP(ptr) ((((ptr)-1) & PAGE_MASK) + PAGE_SIZE)
 #define PAGE_OFFSET(ptr) ((ptr) & ~(PAGE_MASK))
 
-enum Encryption { RC4 = 1, DES, TDEA, AES };
-enum Compression { LZMA = 1, LZO, UCL, ZSTD };
-
 unsigned char serial_key[16];
 
 // 编译的时候存的key其实还没有初始化，在packer里面用混淆后的key覆盖了
@@ -586,6 +583,8 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
 
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
+    enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
+    enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
     char *device = "/dev/ttyUSB0";
     int usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
     if (usb_fd < 0) {
@@ -670,35 +669,8 @@ void *load(void *entry_stacktop) {
     enum Encryption encryption_algorithm = AES;
     enum Compression compression_algorithm = ZSTD;
     // get the alogorithm type
-    switch (obfuscated_key.encryption) {
-    case 1:
-        encryption_algorithm = RC4;
-        break;
-    case 2:
-        encryption_algorithm = DES;
-        break;
-    case 3:
-        encryption_algorithm = TDEA;
-        break;
-    case 4:
-        encryption_algorithm = AES;
-        break;
-    }
-
-    switch (obfuscated_key.compression) {
-    case 1:
-        compression_algorithm = LZMA;
-        break;
-    case 2:
-        compression_algorithm = LZO;
-        break;
-    case 3:
-        compression_algorithm = UCL;
-        break;
-    case 4:
-        compression_algorithm = ZSTD;
-        break;
-    }
+    encryption_algorithm = mapToEncryptionEnum[obfuscated_key.encryption];
+    compression_algorithm = mapToCompressionEnum[obfuscated_key.compression];
 
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     // hello_world_pak
