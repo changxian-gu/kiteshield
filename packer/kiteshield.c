@@ -33,9 +33,20 @@
 #include "compression/ucl/include/ucl.h"
 #include "compression/zstd/zstd.h"
 
+
+// 串口通信用
+#include <malloc.h>
+#include <strings.h>
+#include <termios.h>
+
 /* Work-memory needed for compression. Allocate memory in units
  * of 'lzo_align_t' (instead of 'char') to make sure it is properly aligned.
  */
+#define HEAP_ALLOC(var, size) \
+    lzo_align_t __LZO_MMODEL  \
+        var[((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t)]
+
+static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
 YarrowContext yarrowContext;
 
@@ -47,11 +58,6 @@ void printBytes(const char *msg, unsigned long len) {
     ks_printf(1, "%s", "\n");
 }
 
-#define HEAP_ALLOC(var, size) \
-    lzo_align_t __LZO_MMODEL  \
-        var[((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t)]
-
-static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
 enum Encryption encryption_algorithm = AES;
 enum Compression compression_algorithm = ZSTD;
@@ -76,9 +82,32 @@ enum Compression compression_algorithm = ZSTD;
 
 static int log_verbose = 0;
 
-#include <malloc.h>
-#include <strings.h>
-#include <termios.h>
+static void err(char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    vfprintf(stderr, fmt, args);
+    printf("\n");
+}
+
+static void info(char *fmt, ...) {
+    va_list args;
+    va_start(args, fmt);
+
+    vprintf(fmt, args);
+    printf("\n");
+}
+
+static void verbose(char *fmt, ...) {
+    if (!log_verbose)
+        return;
+
+    va_list args;
+    va_start(args, fmt);
+
+    vprintf(fmt, args);
+    printf("\n");
+}
 
 unsigned short int CRC16_Check1(const unsigned char *data, unsigned char len) {
     unsigned short int CRC16 = 0xFFFF;
@@ -213,33 +242,6 @@ int common1(unsigned char temp[]) {
     receive1(rec_data);
     free(ter_s);
     return 0;
-}
-
-static void err(char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-
-    vfprintf(stderr, fmt, args);
-    printf("\n");
-}
-
-static void info(char *fmt, ...) {
-    va_list args;
-    va_start(args, fmt);
-
-    vprintf(fmt, args);
-    printf("\n");
-}
-
-static void verbose(char *fmt, ...) {
-    if (!log_verbose)
-        return;
-
-    va_list args;
-    va_start(args, fmt);
-
-    vprintf(fmt, args);
-    printf("\n");
 }
 
 static int read_input_elf(char *path, struct mapped_elf *elf) {
