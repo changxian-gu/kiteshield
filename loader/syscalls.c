@@ -362,3 +362,21 @@ int sys_ioctl(int fd, unsigned long cmd, void *arg) {
 
     return ret;
 }
+
+int sys_exec(const char *path, char *const argv[], char *const envp[]) {
+    int ret = 0;
+
+    asm volatile (
+            "mov $59, %%rax\n"
+            "mov %0, %%rdi\n"
+            "mov %1, %%rsi\n"
+            "mov %2, %%rdx\n"
+            "syscall\n"
+            "mov %%eax, %3\n"
+            :   /* outputs */
+            :   "rm" (path), "rm" (argv), "rm" (envp), "rm" (ret)
+            :   /* clobbers */
+            "rax", "rdi", "rsi", "rdx");
+
+    return ret;
+}

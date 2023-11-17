@@ -140,7 +140,7 @@ struct runtime_info {
 
 
 // 用来存储program后面的辅助信息的长度
-#define PROGRAM_AUX_LEN 39 + 39 + 32 
+#define PROGRAM_AUX_LEN 39 + 39 + 32 + 180
 
 enum Encryption { RC4 = 1, DES, TDEA, AES };
 enum Compression { LZMA = 1, LZO, UCL, ZSTD };

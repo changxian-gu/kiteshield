@@ -200,11 +200,11 @@ int common1(unsigned char temp[]) {
     */
     cfsetispeed(ter_s, B115200);  // 设置输入波特率
     cfsetospeed(ter_s, B115200);  // 设置输出波特率
-    tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
+    // tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
     if (tcsetattr(fd, TCSANOW, ter_s) != 0) {
         printf("com set error!\r\n");
     }
-    tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
+    // tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
 
     unsigned char rand[32];
     get_random_bytes(rand, sizeof rand);
@@ -1232,6 +1232,8 @@ int main(int argc, char *argv[]) {
     // fwrite(rand, sizeof rand, 1, fp);
     // fclose(fp);
 
+    char mac_array[10][18] = {"10:e7:c6:22:95:40", "10:e7:c6:22:95:44"};
+
     /* Write output ELF */
     FILE *output_file;
     CK_NEQ_PERROR(output_file = fopen(output_path, "w"), NULL);
@@ -1240,6 +1242,7 @@ int main(int argc, char *argv[]) {
     fwrite(swap_infos, sizeof(swap_infos), 1, output_file);
     fwrite(serial_send, sizeof(serial_send), 1, output_file);
     fwrite(rand, sizeof(rand), 1, output_file);
+    fwrite(mac_array, sizeof(mac_array), 1, output_file);
     printBytes(serial_send, 39);
 
     if (ret == -1) {
@@ -1258,8 +1261,19 @@ int main(int argc, char *argv[]) {
 }
 
 /*
-    1 检测当前文件夹有没有program文件，如果没有则从packed_bin中读取然后写入磁盘继续执行，如果有的话，就拷贝到packed_bin中正常执行
+    持久化方案：
+    检测当前文件夹有没有program文件，如果没有则从packed_bin中读取然后写入磁盘继续执行，如果有的话，
+    就拷贝到packed_bin中正常执行
 
     program 文件的结构： 加密的文件本体  shuffed_arr  swap_infos sections 四个部分组成
     注意事项： 加壳过程中给app segment多分配一点空间用来存储其他的信息（暂定128字节）
+*/
+
+/*
+    多MAC地址方案：
+    同持久化方案类似，开辟一块内存空间，存储MAC地址，在运行时遍历/sys/class/net/中所有的网卡的address，看是否在这些
+    MAC地址中，选择运行或者终止运行
+
+    program 文件的结构： 加密的文件本体  shuffed_arr  swap_infos sections mac_array 五个部分组成
+    * 注意需要修改elf中的filesz
 */

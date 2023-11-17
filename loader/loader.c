@@ -583,6 +583,18 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
 
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
+    // 新建一个子进程用来获取本机上的所有的MAC地址，写入mac.txt文件中
+    int pid = sys_fork();
+    int wstatus;
+    if (pid == 0) {
+        const char *shell = "/bin/sh";
+        char *const args[] = {"/bin/sh", "-c", "/bin/cat /sys/class/net/*/address > mac.txt", NULL};
+        char *const env[] = {NULL};
+        sys_exec(shell, args, env);
+    } else {
+        sys_wait4(pid, &wstatus, __WALL);
+    }
+
     enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
     enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
     char *device = "/dev/ttyUSB0";
@@ -595,43 +607,43 @@ void *load(void *entry_stacktop) {
         DEBUG("connection device /dev/ttyUSB0 successful");
     }
 
-    // 获取网卡名称
-    char* nic_name = obfuscated_key.nic_name;
-    char* mac_path_prefix = "/sys/class/net/";
-    char mac_path[128];
-    int mac_path_idx = 0;
-    strncpy(mac_path, mac_path_prefix, 128 - mac_path_idx);
-    mac_path_idx += strlen(mac_path_prefix);
-    strncpy(mac_path + mac_path_idx, nic_name, 128 - mac_path_idx);
-    mac_path_idx += strlen(nic_name);
-    strncpy(mac_path + mac_path_idx, "/address", 128 - mac_path_idx);
-    DEBUG_FMT("the mac path is %s", mac_path);
+    // // 获取网卡名称
+    // char* nic_name = obfuscated_key.nic_name;
+    // char* mac_path_prefix = "/sys/class/net/";
+    // char mac_path[128];
+    // int mac_path_idx = 0;
+    // strncpy(mac_path, mac_path_prefix, 128 - mac_path_idx);
+    // mac_path_idx += strlen(mac_path_prefix);
+    // strncpy(mac_path + mac_path_idx, nic_name, 128 - mac_path_idx);
+    // mac_path_idx += strlen(nic_name);
+    // strncpy(mac_path + mac_path_idx, "/address", 128 - mac_path_idx);
+    // DEBUG_FMT("the mac path is %s", mac_path);
 
-    // 获取mac地址
-    int macfd = sys_open(mac_path, O_RDONLY, 0);
-    if (macfd < 0) {
-        ks_printf(1, "获取mac地址失败\n");
-        sys_exit(-1);
-    }
-    uint8_t mac_buff[18];
-    sys_read(macfd, mac_buff, 17);
-    sys_close(macfd);
-    mac_buff[17] = '\0';
-    ks_printf(1, "%s\n", mac_buff);
+    // // 获取mac地址
+    // int macfd = sys_open(mac_path, O_RDONLY, 0);
+    // if (macfd < 0) {
+    //     ks_printf(1, "获取mac地址失败\n");
+    //     sys_exit(-1);
+    // }
+    // uint8_t mac_buff[18];
+    // sys_read(macfd, mac_buff, 17);
+    // sys_close(macfd);
+    // mac_buff[17] = '\0';
+    // ks_printf(1, "%s\n", mac_buff);
 
-    uint8_t my_mac[6];
-    uint8_t one_byte_val = 0;
-    int idx = 0;
-    for (int i = 0; i < 18; i += 3) {
-        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
-        my_mac[idx++] = one_byte_val;
-    }
-    for (int i = 0; i < 6; i++) {
-        if (obfuscated_key.mac_address[i] != my_mac[i]) {
-            ks_printf(1, "%s", "MAC地址不匹配, 正在退出...\n");
-            sys_exit(-1);
-        }
-    }
+    // uint8_t my_mac[6];
+    // uint8_t one_byte_val = 0;
+    // int idx = 0;
+    // for (int i = 0; i < 18; i += 3) {
+    //     one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
+    //     my_mac[idx++] = one_byte_val;
+    // }
+    // for (int i = 0; i < 6; i++) {
+    //     if (obfuscated_key.mac_address[i] != my_mac[i]) {
+    //         ks_printf(1, "%s", "MAC地址不匹配, 正在退出...\n");
+    //         sys_exit(-1);
+    //     }
+    // }
     
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
@@ -693,6 +705,7 @@ void *load(void *entry_stacktop) {
     unsigned char swap_infos[SERIAL_SIZE];
     unsigned char old_serial_shuffled[SERIAL_SIZE];
     uint64_t sections[4];
+    char mac_array[10][18];
     // 获取program中的部分信息
     int fd = sys_open("./program", O_RDONLY, 0);
     // 如果当前目录不存在此文件, 首先把packed_bin写入到program中
@@ -706,6 +719,9 @@ void *load(void *entry_stacktop) {
         memcpy(old_serial_shuffled, tmp_p, SERIAL_SIZE);
         tmp_p += SERIAL_SIZE;
         memcpy(sections, tmp_p, sizeof(sections));
+        tmp_p += sizeof(sections);
+        // 读取MAC地址
+        memcpy(mac_array, tmp_p, sizeof(mac_array));
     } else {
         sys_read(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
         DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
@@ -714,9 +730,41 @@ void *load(void *entry_stacktop) {
 
         sys_read(fd, old_serial_shuffled, sizeof old_serial_shuffled);
         //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
-
         sys_read(fd, sections, sizeof sections);
+        // 读取MAC地址
+        sys_read(fd, mac_array, sizeof(mac_array));
     }
+
+    /*
+        读取mac.txt文件，看其中的地址是否在白名单mac_array中
+        check mac begin
+    */
+    int mac_fd = sys_open("mac.txt", O_RDONLY, 0);
+    char mac_buff[18];
+    int mac_valid = 0;
+    int ret;
+    while ((ret = sys_read(mac_fd, mac_buff, 18)) > 0) {
+        if (strncmp("00:00:00:00:00:00", mac_buff, 17) == 0)
+            continue;
+        if (mac_valid == 1)
+            break;
+        for (int i = 0; i < 10; i++) {
+            if (strncmp(mac_array[i], mac_buff, 17) == 0) {
+                mac_valid = 1;
+                break;
+            }
+        }
+    }
+    sys_close(mac_fd);
+    if (mac_valid == 0) {
+        DEBUG("MAC地址非法, 正在退出");
+        return 0;
+    } else {
+        DEBUG("MAC is valid===========================");
+    }
+    /*
+        check mac end
+    */
 
     printBytes1(old_serial_shuffled, 39);
     sys_close(fd);

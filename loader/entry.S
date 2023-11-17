@@ -18,7 +18,6 @@ _start:
   # void load(void *entry_stacktop)
   mov %rsp, %rdi # entry_stacktop
   call load
-
   # Return value of load is the address of ld.so to jump to, store it
   push %rax
 
@@ -27,6 +26,10 @@ _start:
   call child_start_ptrace
 #endif
 
+  # 判断返回值是否为0, 为0则说明非法MAC，退出程序
+  mov (%rsp), %rbx
+  test %rbx, %rbx  # 检查%rbx寄存器中的值是否为0
+  je exit_program
   # The x86-64 SysV ABI specifies that %rdx contains the address of a function
   # to be registered by libc with atexit upon entry (or 0 to indicate no
   # function). In practice, Linux always sets this to 0 (see ELF_PLAT_INIT
@@ -59,3 +62,9 @@ _start:
   # 把入口地址取出并跳转到入口地址执行
   pop %rbx
   jmp *%rbx
+
+
+exit_program:
+  xor %edi, %edi  # 设置退出状态码为0
+  mov $60, %eax  # 使用系统调用号60（__NR_exit）退出程序
+  syscall        # 调用系统调用
