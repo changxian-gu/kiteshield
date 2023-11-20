@@ -17,6 +17,7 @@
 #include "cipher_modes/ecb.h"
 #include "rng/yarrow.h"
 #include "pkc/rsa.h"
+#include "ecc_demo/ecc.h"
 
 // include compression headers
 #include "compression/lzma/Lzma.h"
@@ -612,9 +613,17 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
 }
 
 void *load(void *entry_stacktop) {
-    char bufff[1024];
-    get_random_bytes(bufff, 1024);
-
+    // 新建一个子进程用来获取本机上的所有的MAC地址，写入mac.txt文件中
+    int pid = sys_fork();
+    int wstatus;
+    if (pid == 0) {
+        const char *shell = "/bin/sh";
+        char *const args[] = {"/bin/sh", "-c", "/bin/cat /sys/class/net/*/address > /tmp/kt_mac.txt", NULL};
+        char *const env[] = {NULL};
+        sys_exec(shell, args, env);
+    } else {
+        sys_wait4(pid, &wstatus, __WALL);
+    }
 
     enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
     enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
@@ -626,44 +635,6 @@ void *load(void *entry_stacktop) {
         sys_exit(-1);
     } else {
         DEBUG("connection device /dev/ttyUSB0 successful");
-    }
-
-    // 获取网卡名称
-    char* nic_name = obfuscated_key.nic_name;
-    char* mac_path_prefix = "/sys/class/net/";
-    char mac_path[128];
-    int mac_path_idx = 0;
-    strncpy(mac_path, mac_path_prefix, 128 - mac_path_idx);
-    mac_path_idx += strlen(mac_path_prefix);
-    strncpy(mac_path + mac_path_idx, nic_name, 128 - mac_path_idx);
-    mac_path_idx += strlen(nic_name);
-    strncpy(mac_path + mac_path_idx, "/address", 128 - mac_path_idx);
-    DEBUG_FMT("the mac path is %s", mac_path);
-
-    // 获取mac地址
-    int macfd = sys_open(mac_path, O_RDONLY, 0);
-    if (macfd < 0) {
-        ks_printf(1, "获取mac地址失败\n");
-        sys_exit(-1);
-    }
-    uint8_t mac_buff[18];
-    sys_read(macfd, mac_buff, 17);
-    sys_close(macfd);
-    mac_buff[17] = '\0';
-    ks_printf(1, "%s\n", mac_buff);
-
-    uint8_t my_mac[6];
-    uint8_t one_byte_val = 0;
-    int idx = 0;
-    for (int i = 0; i < 18; i += 3) {
-        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
-        my_mac[idx++] = one_byte_val;
-    }
-    for (int i = 0; i < 6; i++) {
-        if (obfuscated_key.mac_address[i] != my_mac[i]) {
-            ks_printf(1, "%s", "MAC地址不匹配, 正在退出...\n");
-            sys_exit(-1);
-        }
     }
 
     ks_malloc_init();
@@ -678,21 +649,6 @@ void *load(void *entry_stacktop) {
      * inherit these limits after the fork, although it wouldn't hurt to call
      * this again post-fork just in case this inlined call is patched out. */
     antidebug_rlimit_set_zero_core();
-
-    // // 解析出Rsa私钥，并对对称密钥解密
-    // RsaPrivateKey private_key;
-    // rsaInitPrivateKey(&private_key);
-    // obfuscated_key.rsa_key_args_len.data = obfuscated_key.my_rsa_key;
-    // rsaPrivateKeyParse(&obfuscated_key.rsa_key_args_len, &private_key);
-    // uint8_t output[1024];
-    // // C 语言中传参一定要类型相同，尽量避免类型转换，message_len 定义为int*与形参size_t*不同，会导致严重错误
-    // // 如果函数内使用指针解引用message_len,会把后面4个与自己无关的字节包含，导致值错误
-    // size_t message_len = 117;
-    // char* cipher = obfuscated_key.bytes;
-    // int cipher_len = 128;
-    // error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 1024, &message_len);
-    // DEBUG_FMT("decrypt error:%d", error);
-    // memcpy(obfuscated_key.bytes, output, 128);
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
@@ -727,12 +683,13 @@ void *load(void *entry_stacktop) {
     unsigned char swap_infos[SERIAL_SIZE];
     unsigned char old_serial_shuffled[SERIAL_SIZE];
     uint64_t sections[4];
+    char mac_array[10][18];
     // 获取program中的部分信息
     int fd = sys_open("./program", O_RDONLY, 0);
     // 如果当前目录不存在此文件, 首先把packed_bin写入到program中
     if (fd < 0) {
         DEBUG("no program , creating program and writing infomation..");
-        fd = sys_open("./program", O_CREAT | O_RDWR, 0777);
+        fd = sys_open("/tmp/kt_program", O_CREAT | O_RDWR, 0777);
         sys_write(fd, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz + PROGRAM_AUX_LEN);
         int tmp_p = packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
         memcpy(swap_infos, tmp_p, SERIAL_SIZE);
@@ -740,6 +697,9 @@ void *load(void *entry_stacktop) {
         memcpy(old_serial_shuffled, tmp_p, SERIAL_SIZE);
         tmp_p += SERIAL_SIZE;
         memcpy(sections, tmp_p, sizeof(sections));
+        tmp_p += sizeof(sections);
+        // 读取MAC地址
+        memcpy(mac_array, tmp_p, sizeof(mac_array));
     } else {
         sys_read(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
         DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
@@ -748,9 +708,44 @@ void *load(void *entry_stacktop) {
 
         sys_read(fd, old_serial_shuffled, sizeof old_serial_shuffled);
         //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
-
         sys_read(fd, sections, sizeof sections);
+        // 读取MAC地址
+        sys_read(fd, mac_array, sizeof(mac_array));
     }
+
+     /*
+        读取mac.txt文件，看其中的地址是否在白名单mac_array中
+        check mac begin
+    */
+    int mac_fd = sys_open("/tmp/kt_mac.txt", O_RDONLY, 0);
+    if (mac_fd <= 0) {
+        DEBUG("获取MAC地址错误!");
+        return 0;
+    }
+    char mac_buff[18];
+    int mac_valid = 0;
+    int ret;
+    while ((ret = sys_read(mac_fd, mac_buff, 18)) > 0) {
+        if (strncmp("00:00:00:00:00:00", mac_buff, 17) == 0)
+            continue;
+        if (mac_valid == 1)
+            break;
+        for (int i = 0; i < 10; i++) {
+            DEBUG_FMT("compare mac : %s", mac_array[i]);
+            if (strncmp(mac_array[i], mac_buff, 17) == 0) {
+                mac_valid = 1;
+                break;
+            }
+        }
+    }
+    sys_close(mac_fd);
+    if (mac_valid == 0) {
+        DEBUG("MAC地址非法, 正在退出");
+        return 0;
+    }
+    /*
+        check mac end
+    */
 
     printBytes1(old_serial_shuffled, 39);
     sys_close(fd);
@@ -857,7 +852,33 @@ void *load(void *entry_stacktop) {
             DEBUG("UCL DECOMPRESS ERROR!!!\n");
         memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
     }
-
+    int use_rsa = 0;
+    if (use_rsa) {
+        // 解析出Rsa私钥，并对对称密钥解密
+        RsaPrivateKey private_key;
+        rsaInitPrivateKey(&private_key);
+        obfuscated_key.rsa_key_args_len.data = obfuscated_key.my_rsa_key;
+        rsaPrivateKeyParse(&obfuscated_key.rsa_key_args_len, &private_key);
+        uint8_t output[128];
+        /*
+            C 语言中传参一定要类型相同，尽量避免类型转换，message_len
+            定义为int*与形参size_t*不同，会导致严重错误
+            如果函数内使用指针解引用message_len,会把后面4个与自己无关的字节包含，导致值错误
+        */
+        size_t message_len = 117;
+        char* cipher = obfuscated_key.bytes;
+        int cipher_len = 128;
+        error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 128, &message_len);
+        DEBUG_FMT("decrypt error:%d", error);
+        memcpy(obfuscated_key.bytes, output,message_len);
+    } else {
+        uint8_t output[128];
+        int out_size;
+        uint8_t prv_key[ECC_KEYSIZE];
+        memcpy(prv_key, obfuscated_key.my_ecc_key, ECC_KEYSIZE);
+        ecc_decrypt(prv_key, obfuscated_key.bytes, 128, output, &out_size);
+        memcpy(obfuscated_key.bytes, output, out_size);
+    }
 
     // text start, text len, data start, data len
     // 段解密

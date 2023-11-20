@@ -26,6 +26,7 @@
 #include "cipher_modes/ecb.h"
 #include "rng/yarrow.h"
 #include "pkc/rsa.h"
+#include "ecc_demo/ecc.h"
 // include compression headers
 #include "compression/lzma/Lzma.h"
 #include "compression/zstd/zstd.h"
@@ -239,6 +240,8 @@ int common1(unsigned char temp[]) {
 
     memcpy(snd_data.data_buf, temp, SERIAL_SIZE);
 
+    send1(snd_data);
+    send1(snd_data);
     send1(snd_data);
     receive1(rec_data);
     free(ter_s);
@@ -945,10 +948,10 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < argc; i++) {
         printf("argv[%d] : %s\n", i, argv[i]);
     }
-    if (argc != 7) {
-        printf("[ERROR]: 接收参数错误！\n");
-        return -1;
-    }
+    // if (argc != 7) {
+    //     printf("[ERROR]: 接收参数错误！\n");
+    //     return -1;
+    // }
     input_path = argv[1];
     output_path = argv[4];
     printf("DEBUG: argv[2] : %d\n", atoi(argv[2]));
@@ -989,38 +992,6 @@ int main(int argc, char *argv[]) {
         loader_size = sizeof(GENERATED_LOADER_NO_RT);
     }
 
-    // 拿到loader开头的placeholder
-    if (strlen(argv[5]) != 17) {
-        printf("MAC地址格式错误, 正在退出...\n");
-        return -1;
-    }
-
-    struct key_placeholder place_holder = *((struct key_placeholder*)loader);
-    // 写入网卡名称
-    strcpy(place_holder.nic_name, argv[6]);
-    // 写入MAC地址
-    uint8_t* mac_buff = argv[5];
-    uint8_t one_byte_val = 0;
-    int idx = 0;
-    for (int i = 0; i < 17; i += 3) {
-        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
-        place_holder.mac_address[idx++] = one_byte_val;
-    }
-
-    // uint8_t seed[32];
-    // yarrowInit(&yarrowContext);
-    // yarrowSeed(&yarrowContext, seed, sizeof(seed));
-
-    // RsaPublicKey publicKey;
-    // RsaPrivateKey privateKey;
-    // rsaInitPublicKey(&publicKey);
-    // rsaInitPrivateKey(&privateKey);
-    // rsaGenerateKeyPair(&yarrowPrngAlgo, &yarrowContext, 1024, 65537, &privateKey, &publicKey);
-    // rsaPrivateKeyFormat(&privateKey, place_holder.my_rsa_key, &place_holder.rsa_key_args_len);
-
-    // 把placeholder写回
-    memcpy(loader, &place_holder, sizeof(struct key_placeholder));
-
     /* Fully strip binary */
     // if (full_strip(&elf) == -1) {
     //     err("could not strip binary");
@@ -1043,69 +1014,55 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
+    int use_rsa = 0;
+    if (use_rsa) {
+        struct key_placeholder place_holder = *((struct key_placeholder *)loader);
+        uint8_t seed[32];
+        yarrowInit(&yarrowContext);
+        yarrowSeed(&yarrowContext, seed, sizeof(seed));
 
-    // 用Rsa加密对称密钥
-    // char cipher[128];
-    // int cipher_len;
-    // place_holder = *((struct key_placeholder*)loader);
-    // rsaesPkcs1v15Encrypt(&yarrowPrngAlgo, &yarrowContext, &publicKey, place_holder.bytes, 117, cipher, &cipher_len);
-    // memcpy(place_holder.bytes, cipher, 128);
-    // memcpy(loader, &place_holder, sizeof(struct key_placeholder));
-    
-    // verbose("packed app data : %d %d %d %d\n", *(unsigned char*)elf.start, *((unsigned char*)elf.start + 1),*((unsigned char*)elf.start + 2),*((unsigned char*)elf.start + 3));
-    for (int i = 0; i < SERIAL_SIZE; i++) {
-        printf("%02x", serial_send[i]);
+        RsaPublicKey publicKey;
+        RsaPrivateKey privateKey;
+        rsaInitPublicKey(&publicKey);
+        rsaInitPrivateKey(&privateKey);
+        rsaGenerateKeyPair(&yarrowPrngAlgo, &yarrowContext, 1024, 65537, &privateKey, &publicKey);
+        rsaPrivateKeyFormat(&privateKey, place_holder.my_rsa_key, &place_holder.rsa_key_args_len);
+        printBytes(place_holder.bytes, 128);
+        // 用Rsa加密对称密钥
+        char cipher[128];
+        int cipher_len;
+        int t = rsaesPkcs1v15Encrypt(&yarrowPrngAlgo, &yarrowContext, &publicKey, 
+                            place_holder.bytes, 117, cipher, &cipher_len); 
+        memcpy(place_holder.bytes, cipher, 128);
+        memcpy(loader, &place_holder, sizeof(struct key_placeholder));
+    } else {
+        struct key_placeholder place_holder = *((struct key_placeholder *)loader);
+        uint8_t pub_key[ECC_KEYSIZE];
+        uint8_t prv_key[ECC_KEYSIZE];
+        uint8_t cipher[128];
+        ecc_init_keys(pub_key,prv_key);
+        uint32_t out_size;
+        ecc_encrypt(pub_key, place_holder.bytes, 128, cipher, &out_size);
+        memcpy(place_holder.bytes, cipher, 128);
+        memcpy(place_holder.my_ecc_key, prv_key, ECC_KEYSIZE);
+        memcpy(loader, &place_holder, sizeof(struct key_placeholder));
     }
-    printf("\n");
 
-    // FILE *fp = NULL;
-    // fp = fopen("program", "w+");
-    // fwrite(elf.start, elf.size, 1, fp);
-    // fclose(fp);
-
+    char mac_array[10][18];
+    memset(mac_array, 0, 180);
+    // 从本地文件中读取MAC地址
+    int mac_fd = open("mac_address.txt", O_RDONLY);
+    if (mac_fd <= 0) {
+        printf("本地未找到MAC地址列表文件\n");
+        return -1;
+    }
+    int mac_idx = 0;
+    while (mac_idx < 10 && (ret = read(mac_fd, mac_array[mac_idx], 18)) > 0) {
+        mac_idx++;
+    }
+    close(mac_fd);
     unsigned char swap_infos[SERIAL_SIZE];
-
-    // printf("before shuffled array2:\n");
-    // for (int i = 0; i < SERIAL_SIZE; i++) {
-    //     printf("%02x", serial_send[i]);
-    // }
-    // printf("\n");
-
     shuffle(serial_send, SERIAL_SIZE, swap_infos);
-
-    // for (int i = 0; i < SERIAL_SIZE; i++) printf("%d ", swap_infos[i]);
-
-    // // 输出洗牌后的序列
-    // printf("shuffled array:\n");
-    // for (int i = 0; i < SERIAL_SIZE; i++) {
-    //     printf("%02x", serial_send[i]);
-    // }
-    // printf("\n");
-
-    // // 反推回原始序列
-    // unsigned char serial_send_back[SERIAL_SIZE];
-    // memcpy(serial_send_back, serial_send, sizeof serial_send);
-    // reverse_shuffle(serial_send_back, SERIAL_SIZE, swap_infos);
-
-    // // 输出反推回的序列
-    // printf("Recovered array:\n");
-    // for (int i = 0; i < SERIAL_SIZE; i++) {
-    //     printf("%02x", serial_send_back[i]);
-    // }
-    // printf("\n");
-
-    // fp = fopen("program", "a");
-    // fwrite(swap_infos, sizeof swap_infos, 1, fp);
-    // fclose(fp);
-
-    // fp = fopen("program", "a");
-    // fwrite(serial_send, sizeof serial_send, 1, fp);
-    // fclose(fp);
-
-    // // section num
-    // fp = fopen("program", "a");
-    // fwrite(rand, sizeof rand, 1, fp);
-    // fclose(fp);
 
     /* Write output ELF */
     FILE *output_file;
@@ -1115,6 +1072,7 @@ int main(int argc, char *argv[]) {
     fwrite(swap_infos, sizeof(swap_infos), 1, output_file);
     fwrite(serial_send, sizeof(serial_send), 1, output_file);
     fwrite(rand, sizeof(rand), 1, output_file);
+    fwrite(mac_array, sizeof(mac_array), 1, output_file);
     printBytes(serial_send, 39);
     if (ret == -1) {
         err("could not produce output ELF");
@@ -1122,7 +1080,7 @@ int main(int argc, char *argv[]) {
     }
 
     CK_NEQ_PERROR(fclose(output_file), EOF);
-    CK_NEQ_PERROR(chmod(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH), -1);
+    // CK_NEQ_PERROR(chmod(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH), -1);
 
     info("output ELF has been written to %s", output_path);
     ks_malloc_deinit();
