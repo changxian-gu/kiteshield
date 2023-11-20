@@ -2,7 +2,7 @@
 CFLAGS_COMMON = -std=gnu99 -fno-pie -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -c -I .. -I../cyclone_cipher -I../cyclone_cipher/common -I../compression/lzma -I../compression/lzo -I../compression/ucl \
 				-I../compression/ucl/include -I../compression/ucl/src
 LDFLAGS = -no-pie 
-LIB = -L../cyclone_cipher -lcrypto -L../compression/ucl/ -lucl
+LIB = -L../cyclone_cipher -lcrypto -lecc -L../compression/ucl/ -lucl
 
 CFLAGS = $(CFLAGS_COMMON)
 

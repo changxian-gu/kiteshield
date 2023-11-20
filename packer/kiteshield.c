@@ -27,6 +27,7 @@
 #include "cipher_modes/ecb.h"
 #include "pkc/rsa.h"
 #include "rng/yarrow.h"
+#include "ecc_demo/ecc.h"
 // include compression headers
 #include "compression/lzma/Lzma.h"
 #include "compression/lzo/minilzo.h"
@@ -746,20 +747,12 @@ static int apply_outer_encryption(struct mapped_elf *elf, void *loader_start,
         info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_aes(&key, elf->start, elf->size);
-        /* Obfuscate Key */
-        struct aes_key obfuscated_key;
-        obf_deobf_outer_key_aes(&key, &obfuscated_key, loader_start,
-                                loader_size);
-        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
-        // 把混淆后的key写入loader
-        struct key_placeholder m_key_placeholder =
-            *(struct key_placeholder *)loader_start;
-        memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
-        memcpy(m_key_placeholder.bytes, obfuscated_key.bytes,
-               sizeof(obfuscated_key));
+
+        // 把key写入loader
+        struct key_placeholder m_key_placeholder = *(struct key_placeholder *)loader_start;
+        memcpy(m_key_placeholder.bytes, key.bytes, sizeof(key));
         m_key_placeholder.encryption = AES;
-        memcpy(loader_start, &m_key_placeholder,
-               sizeof(struct key_placeholder));
+        memcpy(loader_start, &m_key_placeholder, sizeof(struct key_placeholder));
     } else if (encryption_algorithm == DES) {
         printf("[Packer] Using DES...\n");
         struct des_key key;
@@ -1067,10 +1060,10 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < argc; i++) {
         printf("argv[%d] : %s\n", i, argv[i]);
     }
-    if (argc != 7) {
-        printf("[ERROR]: 接收参数错误！\n");
-        return -1;
-    }
+    // if (argc != 7) {
+    //     printf("[ERROR]: 接收参数错误！\n");
+    //     return -1;
+    // }
     input_path = argv[1];
     output_path = argv[4];
     printf("DEBUG: argv[2] : %d\n", atoi(argv[2]));
@@ -1112,38 +1105,6 @@ int main(int argc, char *argv[]) {
     }
 
 
-    if (strlen(argv[5]) != 17) {
-        printf("MAC地址格式错误, 正在退出...\n");
-        return -1;
-    }
-
-    struct key_placeholder place_holder = *((struct key_placeholder *)loader);
-    // 写入网卡名称
-    strcpy(place_holder.nic_name, argv[6]);
-    // 写入mac地址
-    uint8_t *mac_buff = argv[5];
-    uint8_t one_byte_val = 0;
-    int idx = 0;
-    for (int i = 0; i < 17; i += 3) {
-        one_byte_val = hexToDec(mac_buff[i]) * 16 + hexToDec(mac_buff[i + 1]);
-        place_holder.mac_address[idx++] = one_byte_val;
-    }
-
-    // uint8_t seed[32];
-    // yarrowInit(&yarrowContext);
-    // yarrowSeed(&yarrowContext, seed, sizeof(seed));
-
-    // RsaPublicKey publicKey;
-    // RsaPrivateKey privateKey;
-    // rsaInitPublicKey(&publicKey);
-    // rsaInitPrivateKey(&privateKey);
-    // rsaGenerateKeyPair(&yarrowPrngAlgo, &yarrowContext, 1024, 65537,
-    // &privateKey, &publicKey); rsaPrivateKeyFormat(&privateKey,
-    // place_holder.my_rsa_key, &place_holder.rsa_key_args_len);
-
-    // 把placeholder写回
-    memcpy(loader, &place_holder, sizeof(struct key_placeholder));
-
     /* Fully strip binary */
     // if (full_strip(&elf) == -1) {
     //     err("could not strip binary");
@@ -1166,18 +1127,40 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    // 用Rsa加密对称密钥
-    // char cipher[128];
-    // int cipher_len;
-    // place_holder = *((struct key_placeholder*)loader);
-    // rsaesPkcs1v15Encrypt(&yarrowPrngAlgo, &yarrowContext, &publicKey,
-    // place_holder.bytes, 117, cipher, &cipher_len); memcpy(place_holder.bytes,
-    // cipher, 128); memcpy(loader, &place_holder, sizeof(struct
-    // key_placeholder));
+    int use_rsa = 0;
+    if (use_rsa) {
+        struct key_placeholder place_holder = *((struct key_placeholder *)loader);
+        uint8_t seed[32];
+        yarrowInit(&yarrowContext);
+        yarrowSeed(&yarrowContext, seed, sizeof(seed));
 
-    // verbose("packed app data : %d %d %d %d\n", *(unsigned char*)elf.start,
-    // *((unsigned char*)elf.start + 1),*((unsigned char*)elf.start +
-    // 2),*((unsigned char*)elf.start + 3));
+        RsaPublicKey publicKey;
+        RsaPrivateKey privateKey;
+        rsaInitPublicKey(&publicKey);
+        rsaInitPrivateKey(&privateKey);
+        rsaGenerateKeyPair(&yarrowPrngAlgo, &yarrowContext, 1024, 65537, &privateKey, &publicKey);
+        rsaPrivateKeyFormat(&privateKey, place_holder.my_rsa_key, &place_holder.rsa_key_args_len);
+        printBytes(place_holder.bytes, 128);
+        // 用Rsa加密对称密钥
+        char cipher[128];
+        int cipher_len;
+        int t = rsaesPkcs1v15Encrypt(&yarrowPrngAlgo, &yarrowContext, &publicKey, 
+                            place_holder.bytes, 117, cipher, &cipher_len); 
+        memcpy(place_holder.bytes, cipher, 128);
+        memcpy(loader, &place_holder, sizeof(struct key_placeholder));
+    } else {
+        struct key_placeholder place_holder = *((struct key_placeholder *)loader);
+        uint8_t pub_key[ECC_KEYSIZE];
+        uint8_t prv_key[ECC_KEYSIZE];
+        uint8_t cipher[128];
+        ecc_init_keys(pub_key,prv_key);
+        uint32_t out_size;
+        ecc_encrypt(pub_key, place_holder.bytes, 128, cipher, &out_size);
+        memcpy(place_holder.bytes, cipher, 128);
+        memcpy(place_holder.my_ecc_key, prv_key, ECC_KEYSIZE);
+        memcpy(loader, &place_holder, sizeof(struct key_placeholder));
+    }
+
     for (int i = 0; i < SERIAL_SIZE; i++) {
         printf("%02x", serial_send[i]);
     }
@@ -1232,7 +1215,7 @@ int main(int argc, char *argv[]) {
     // fwrite(rand, sizeof rand, 1, fp);
     // fclose(fp);
 
-    char mac_array[10][18] = {"10:e7:c6:22:95:40", "10:e7:c6:22:95:44"};
+    char mac_array[10][18] = {"10:e7:c6:22:95:43", "10:e7:c6:22:95:44"};
 
     /* Write output ELF */
     FILE *output_file;

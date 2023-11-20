@@ -73,13 +73,14 @@ typedef struct {
 
 // 用来存储key，保证这个数组能容纳最大长度的key
 struct key_placeholder {
-  uint8_t bytes[100];
-  uint8_t nic_name[28];
+  uint8_t bytes[128];
   uint8_t mac_address[6];
   uint8_t encryption;
   uint8_t compression;
   FormatedRsaPrivateKey rsa_key_args_len;
-  uint8_t my_rsa_key[1024];
+  uint8_t my_rsa_key[128];
+  uint8_t my_ecc_key[128];
+  uint8_t no_use[768];
 } __attribute__((packed));
 
 /* Represents a function that has been encrypted/instrumented and that the
