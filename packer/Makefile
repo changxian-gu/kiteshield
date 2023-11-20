@@ -4,7 +4,7 @@ CFLAGS_COMMON = -Wall -std=gnu99 -I .. -I../cyclone_cipher -I../cyclone_cipher/c
 CFLAGS = $(CFLAGS_COMMON)
 # 目前zstd算法的外壳支持使用zstd库
 LDFLAGS = -Lbddisasm/bin/x64/Release -static -L../compression/zstd/ -lzstd -L../compression/ucl/ -lucl
-LIB = -L../cyclone_cipher -lcrypto
+LIB = -L../cyclone_cipher -lcrypto -lecc
 
 SRCS = $(wildcard *.c ../common/*.c ../loader/debug.c ../compression/lzma/*.c ../compression/lzo/*.c)
 

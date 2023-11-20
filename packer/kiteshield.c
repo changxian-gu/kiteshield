@@ -938,6 +938,7 @@ int main(int argc, char *argv[]) {
     enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
     char *input_path, *output_path;
     int layer_one_only = 0;
+    int c;
     int ret;
 
     unsigned char serial_send[SERIAL_SIZE];
@@ -991,6 +992,7 @@ int main(int argc, char *argv[]) {
         loader = GENERATED_LOADER_NO_RT;
         loader_size = sizeof(GENERATED_LOADER_NO_RT);
     }
+
 
     /* Fully strip binary */
     // if (full_strip(&elf) == -1) {
@@ -1053,6 +1055,7 @@ int main(int argc, char *argv[]) {
     // 从本地文件中读取MAC地址
     int mac_fd = open("mac_address.txt", O_RDONLY);
     if (mac_fd <= 0) {
+        printf("mac_fd : %d\n", mac_fd);
         printf("本地未找到MAC地址列表文件\n");
         return -1;
     }
@@ -1061,9 +1064,9 @@ int main(int argc, char *argv[]) {
         mac_idx++;
     }
     close(mac_fd);
+
     unsigned char swap_infos[SERIAL_SIZE];
     shuffle(serial_send, SERIAL_SIZE, swap_infos);
-
     /* Write output ELF */
     FILE *output_file;
     CK_NEQ_PERROR(output_file = fopen(output_path, "w"), NULL);
@@ -1074,15 +1077,36 @@ int main(int argc, char *argv[]) {
     fwrite(rand, sizeof(rand), 1, output_file);
     fwrite(mac_array, sizeof(mac_array), 1, output_file);
     printBytes(serial_send, 39);
+
     if (ret == -1) {
         err("could not produce output ELF");
         return -1;
     }
 
     CK_NEQ_PERROR(fclose(output_file), EOF);
-    // CK_NEQ_PERROR(chmod(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH), -1);
+    CK_NEQ_PERROR(
+        chmod(output_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH),
+        -1);
 
     info("output ELF has been written to %s", output_path);
     ks_malloc_deinit();
     return 0;
 }
+
+/*
+    持久化方案：
+    检测当前文件夹有没有program文件，如果没有则从packed_bin中读取然后写入磁盘继续执行，如果有的话，
+    就拷贝到packed_bin中正常执行
+
+    program 文件的结构： 加密的文件本体  shuffed_arr  swap_infos sections 四个部分组成
+    注意事项： 加壳过程中给app segment多分配一点空间用来存储其他的信息（暂定128字节）
+*/
+
+/*
+    多MAC地址方案：
+    同持久化方案类似，开辟一块内存空间，存储MAC地址，在运行时遍历/sys/class/net/中所有的网卡的address，看是否在这些
+    MAC地址中，选择运行或者终止运行
+
+    program 文件的结构： 加密的文件本体  shuffed_arr  swap_infos sections mac_array 五个部分组成
+    * 注意需要修改elf中的filesz
+*/

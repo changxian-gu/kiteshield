@@ -296,7 +296,6 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
   iov.regs = &regs;
   iov.base = sizeof(struct user_regs_struct);
   sys_ptrace(PTRACE_GETREGSET, thread->tid,(void *) 1, &iov);
-  ks_printf(1, "in handle_fcn_entry the pc :%p\n", regs.pc);
 
   set_int3_at_addr(thread->tid, tp->addr);
 
@@ -411,8 +410,6 @@ static void handle_trap(struct thread *thread, struct thread_list *tlist,
   iov.base = sizeof(struct user_regs_struct);
   res = sys_ptrace(PTRACE_GETREGSET, thread->tid,(void *) 1, &iov);
   DIE_IF_FMT(res < 0, "PTRACE_GETREGS failed with error %d", res);
-
-  ks_printf(1, "the pc :%p\n", regs.pc);
 
   struct trap_point *tp = get_tp(iov.regs->pc);
   if (!tp) {

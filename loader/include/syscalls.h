@@ -338,4 +338,7 @@ int sys_stat(int dirfd, const char *pathname, int flags, unsigned int mask,
 
 int sys_setrlimit(int resource, struct rlimit *rlim);
 
+int sys_exec(const char *path, char *const argv[], char *const envp[]);
+
+
 #endif /* __KITESHIELD_SYSCALLS_H */

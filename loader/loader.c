@@ -611,7 +611,6 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
     memcpy(start, out, actual_encrypt_len);
     des3Deinit(&des3_context);
 }
-
 void *load(void *entry_stacktop) {
     // 新建一个子进程用来获取本机上的所有的MAC地址，写入mac.txt文件中
     int pid = sys_fork();
@@ -636,12 +635,11 @@ void *load(void *entry_stacktop) {
     } else {
         DEBUG("connection device /dev/ttyUSB0 successful");
     }
-
+    
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
     if (antidebug_proc_check_traced())
         DIE(TRACED_MSG);
-
     antidebug_remove_ld_env_vars(entry_stacktop);
 
     /* Disable core dumps via rlimit here before we start doing sensitive stuff
@@ -653,21 +651,19 @@ void *load(void *entry_stacktop) {
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
     // char* 类型的指针
-    char **argv = ((char **) entry_stacktop) + 1;
+    char **argv = ((char **)entry_stacktop) + 1;
     enum Encryption encryption_algorithm = AES;
     enum Compression compression_algorithm = ZSTD;
-    
     // get the alogorithm type
     encryption_algorithm = mapToEncryptionEnum[obfuscated_key.encryption];
     compression_algorithm = mapToCompressionEnum[obfuscated_key.compression];
 
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     // hello_world_pak
-    Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *) LOADER_ADDR;
+    Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *)LOADER_ADDR;
 
     /* The PHDR in our binary corresponding to the loader (ie. this code) */
-    Elf64_Phdr *loader_phdr = (Elf64_Phdr *)
-            (LOADER_ADDR + us_ehdr->e_phoff);
+    Elf64_Phdr *loader_phdr = (Elf64_Phdr *)(LOADER_ADDR + us_ehdr->e_phoff);
 
     /* The PHDR in our binary corresponding to the encrypted app */
     Elf64_Phdr *packed_bin_phdr = loader_phdr + 1;
@@ -675,7 +671,7 @@ void *load(void *entry_stacktop) {
     /* The EHDR of the actual application to be run (encrypted until
      * decrypt_packed_bin is called)
      */
-    Elf64_Ehdr *packed_bin_ehdr = (Elf64_Ehdr *) (packed_bin_phdr->p_vaddr);
+    Elf64_Ehdr *packed_bin_ehdr = (Elf64_Ehdr *)(packed_bin_phdr->p_vaddr);
     // 去掉辅助变量的位置，为后面解密与解压提供正确的文件大小
     packed_bin_phdr->p_filesz -= PROGRAM_AUX_LEN;
     // DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
@@ -685,7 +681,7 @@ void *load(void *entry_stacktop) {
     uint64_t sections[4];
     char mac_array[10][18];
     // 获取program中的部分信息
-    int fd = sys_open("./program", O_RDONLY, 0);
+    int fd = sys_open("/tmp/kt_program", O_RDONLY, 0);
     // 如果当前目录不存在此文件, 首先把packed_bin写入到program中
     if (fd < 0) {
         DEBUG("no program , creating program and writing infomation..");
@@ -713,7 +709,7 @@ void *load(void *entry_stacktop) {
         sys_read(fd, mac_array, sizeof(mac_array));
     }
 
-     /*
+    /*
         读取mac.txt文件，看其中的地址是否在白名单mac_array中
         check mac begin
     */
@@ -731,7 +727,6 @@ void *load(void *entry_stacktop) {
         if (mac_valid == 1)
             break;
         for (int i = 0; i < 10; i++) {
-            DEBUG_FMT("compare mac : %s", mac_array[i]);
             if (strncmp(mac_array[i], mac_buff, 17) == 0) {
                 mac_valid = 1;
                 break;
@@ -763,76 +758,89 @@ void *load(void *entry_stacktop) {
     receive(&rec_data);
     get_serial_key(serial_key, &rec_data);
 
-
     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
      * adjust loader code start and size accordingly */
     size_t hdr_adjust = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
-    void *loader_start = (void *) loader_phdr->p_vaddr + hdr_adjust;
+    void *loader_start = (void *)loader_phdr->p_vaddr + hdr_adjust;
     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
 
     if (encryption_algorithm == AES) {
         DEBUG("[LOADER] Using AES Decrypting...");
+        // 拿到AES的真实KEY
         struct aes_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_aes((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
+        decrypt_packed_bin_aes((void *)packed_bin_phdr->p_vaddr,
+                               packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == DES) {
         DEBUG("[LOADER] Using DES Decrypting...");
         struct des_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_des((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
+        decrypt_packed_bin_des((void *)packed_bin_phdr->p_vaddr,
+                               packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == RC4) {
         DEBUG("[LOADER] Using RC4 Decrypting...");
         struct rc4_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
+        // loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key,
+        // loader_start, loader_size);
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_rc4((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz, &actual_key);
+        decrypt_packed_bin_rc4((void *)packed_bin_phdr->p_vaddr,
+                               packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == TDEA) {
         DEBUG("[LOADER] Using TDEA Decrypting...");
         struct des3_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
-        decrypt_packed_bin_des3((void *) packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz,&actual_key);
+        decrypt_packed_bin_des3((void *)packed_bin_phdr->p_vaddr,
+                                packed_bin_phdr->p_filesz, &actual_key);
     }
     DEBUG("[LOADER] decrypt sucessfully");
-
     // 把解密后的内容复制一份
     uint8_t* bin_new = ks_malloc(packed_bin_phdr->p_filesz);
     memcpy(bin_new, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
 
     if (compression_algorithm == ZSTD) {
         DEBUG("[LOADER] Using ZSTD Decompressing...");
-        uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+        uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
-        uint8_t* decompressedBlob = ks_malloc(decompressedSize);
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
-        decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize, compressedBlob, compressedSize);
-        memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+        uint8_t *decompressedBlob = ks_malloc(decompressedSize);
+        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+                  decompressedSize);
+        decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize,
+                                           compressedBlob, compressedSize);
+        memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
+               decompressedSize);
     } else if (compression_algorithm == LZO) {
         DEBUG("[LOADER] Using LZO Decompressing...");
-        uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+        uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
-        uint8_t* decompressedBlob = ks_malloc(decompressedSize);
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
-        int ret = lzo1x_decompress(compressedBlob, compressedSize, decompressedBlob, &decompressedSize, NULL);
+        uint8_t *decompressedBlob = ks_malloc(decompressedSize);
+        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+                  decompressedSize);
+        int ret = lzo1x_decompress(compressedBlob, compressedSize,
+                                   decompressedBlob, &decompressedSize, NULL);
         DEBUG_FMT("Now the decompressSize is %d", decompressedSize);
         if (ret != 0) {
             ks_printf(1, "[decompression]: something wrong!\n");
         }
-        memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+        memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
+               decompressedSize);
         ks_free(decompressedBlob);
         DEBUG("LZO FINISHED");
     } else if (compression_algorithm == LZMA) {
         DEBUG("[LOADER] Using LZMA Decompressing...");
         // lzma decompression
-        uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+        uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize;
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize, decompressedSize);
-        uint8_t* decompressedBlob = lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
+        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+                  decompressedSize);
+        uint8_t *decompressedBlob =
+            lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
         if (decompressedBlob) {
             DEBUG("Decompressed:\n");
             hexdump(decompressedBlob, decompressedSize);
@@ -840,17 +848,21 @@ void *load(void *entry_stacktop) {
             DEBUG("Nope, we screwed it (part 2)\n");
             return;
         }
-        memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+        memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
+               decompressedSize);
     } else if (compression_algorithm == UCL) {
         DEBUG("[LOADER] Using UCL Decompressing...");
-        uint8_t* compressedBlob = packed_bin_phdr->p_vaddr;
+        uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
-        uint8_t* decompressedBlob = ks_malloc(decompressedSize);
-        int r = ucl_nrv2b_decompress_8(compressedBlob, compressedSize, decompressedBlob, &decompressedSize, NULL);
+        uint8_t *decompressedBlob = ks_malloc(decompressedSize);
+        int r =
+            ucl_nrv2b_decompress_8(compressedBlob, compressedSize,
+                                   decompressedBlob, &decompressedSize, NULL);
         if (r != UCL_E_OK)
             DEBUG("UCL DECOMPRESS ERROR!!!\n");
-        memcpy((void*) packed_bin_phdr->p_vaddr, decompressedBlob, decompressedSize);
+        memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
+               decompressedSize);
     }
     int use_rsa = 0;
     if (use_rsa) {
@@ -879,7 +891,6 @@ void *load(void *entry_stacktop) {
         ecc_decrypt(prv_key, obfuscated_key.bytes, 128, output, &out_size);
         memcpy(obfuscated_key.bytes, output, out_size);
     }
-
     // text start, text len, data start, data len
     // 段解密
     if (encryption_algorithm == AES) {
@@ -968,7 +979,7 @@ void *load(void *entry_stacktop) {
     }
 
     // 写回program
-    int prog_fd = sys_open("program", O_RDWR, 0777);
+    int prog_fd = sys_open("/tmp/kt_program", O_RDWR, 0777);
     sys_write(prog_fd, bin_new, packed_bin_phdr->p_filesz);
     shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
     sys_write(prog_fd, swap_infos, SERIAL_SIZE);
@@ -978,27 +989,29 @@ void *load(void *entry_stacktop) {
         持久化---end
     */
 
-    /* Entry point for ld.so if this is not a statically linked binary, otherwise
-     * map_elf_from_mem will not touch this and it will be set below. */
+    /* Entry point for ld.so if this is not a statically linked binary,
+     * otherwise map_elf_from_mem will not touch this and it will be set below.
+     */
     void *interp_entry = NULL;
     void *interp_base = NULL;
     // 对解密后的文件进行处理
-    void *load_addr = map_elf_from_mem(packed_bin_ehdr, &interp_entry, &interp_base);
+    void *load_addr =
+        map_elf_from_mem(packed_bin_ehdr, &interp_entry, &interp_base);
     DEBUG_FMT("binary base address is %p", load_addr);
 
-    void *program_entry = packed_bin_ehdr->e_type == ET_EXEC ?
-                          (void *) packed_bin_ehdr->e_entry : load_addr + packed_bin_ehdr->e_entry;
+    void *program_entry = packed_bin_ehdr->e_type == ET_EXEC
+                              ? (void *)packed_bin_ehdr->e_entry
+                              : load_addr + packed_bin_ehdr->e_entry;
     // 在命令函参数之上有环境变量，环境变量之上就是辅助向量，存了一些键值对，提供给动态链接器?
-    // 修改了程序入口地址，program header addr，interpreter base和program header number
-    setup_auxv(argv,
-               program_entry,
-               (void *) (load_addr + packed_bin_ehdr->e_phoff),
-               interp_base,
+    // 修改了程序入口地址，program header addr，interpreter base和program header
+    // number
+    setup_auxv(argv, program_entry,
+               (void *)(load_addr + packed_bin_ehdr->e_phoff), interp_base,
                packed_bin_ehdr->e_phnum);
 
     DEBUG("finished mapping binary into memory");
 
-    /* load returns the i nitial address entry code should jump to. If we have a
+    /* load returns the initial address entry code should jump to. If we have a
      * dynamic linker, this is its entry address, otherwise, it's the address
      * specified in the binary itself.
      */

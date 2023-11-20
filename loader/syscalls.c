@@ -432,4 +432,24 @@ int sys_ioctl(int fd, unsigned int request, void *arg)
   return ret;
 }
 
+int sys_exec(const char *path, char *const argv[], char *const envp[])
+{
+  int ret = 0;
+
+  asm volatile(
+    "mov x0, %[path]\n"
+    "mov x1, %[argv]\n"
+    "mov x2, %[envp]\n"
+    "stp x29, x30, [sp, -16]!\n"
+    "mov x8, #221 \n"  // 221 是 execve 系统调用号
+    "svc #0 \n"
+    "ldp x29, x30, [sp], 16\n"
+    "mov %[result], x0"
+    : [result] "=r"(ret)
+    : [path] "r"(path), [argv] "r"(argv), [envp] "r"(envp)
+    : "x0", "x1", "x2", "x8"
+  );
+
+  return ret;
+}
 
