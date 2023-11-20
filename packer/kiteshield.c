@@ -1161,62 +1161,23 @@ int main(int argc, char *argv[]) {
         memcpy(loader, &place_holder, sizeof(struct key_placeholder));
     }
 
-    for (int i = 0; i < SERIAL_SIZE; i++) {
-        printf("%02x", serial_send[i]);
+    char mac_array[10][18];
+    memset(mac_array, 0, 180);
+    // 从本地文件中读取MAC地址
+    int mac_fd = open("mac_address.txt", O_RDONLY);
+    if (mac_fd <= 0) {
+        printf("mac_fd : %d\n", mac_fd);
+        printf("本地未找到MAC地址列表文件\n");
+        return -1;
     }
-    printf("\n");
-
-    // FILE *fp = NULL;
-    // fp = fopen("program", "w+");
-    // fwrite(elf.start, elf.size, 1, fp);
-    // fclose(fp);
+    int mac_idx = 0;
+    while (mac_idx < 10 && (ret = read(mac_fd, mac_array[mac_idx], 18)) > 0) {
+        mac_idx++;
+    }
+    close(mac_fd);
 
     unsigned char swap_infos[SERIAL_SIZE];
-
-    // printf("before shuffled array2:\n");
-    // for (int i = 0; i < SERIAL_SIZE; i++) {
-    //     printf("%02x", serial_send[i]);
-    // }
-    // printf("\n");
-
     shuffle(serial_send, SERIAL_SIZE, swap_infos);
-
-    // for (int i = 0; i < SERIAL_SIZE; i++) printf("%d ", swap_infos[i]);
-
-    // // 输出洗牌后的序列
-    // printf("shuffled array:\n");
-    // for (int i = 0; i < SERIAL_SIZE; i++) {
-    //     printf("%02x", serial_send[i]);
-    // }
-    // printf("\n");
-
-    // // 反推回原始序列
-    // unsigned char serial_send_back[SERIAL_SIZE];
-    // memcpy(serial_send_back, serial_send, sizeof serial_send);
-    // reverse_shuffle(serial_send_back, SERIAL_SIZE, swap_infos);
-
-    // // 输出反推回的序列
-    // printf("Recovered array:\n");
-    // for (int i = 0; i < SERIAL_SIZE; i++) {
-    //     printf("%02x", serial_send_back[i]);
-    // }
-    // printf("\n");
-
-    // fp = fopen("program", "a");
-    // fwrite(swap_infos, sizeof swap_infos, 1, fp);
-    // fclose(fp);
-
-    // fp = fopen("program", "a");
-    // fwrite(serial_send, sizeof serial_send, 1, fp);
-    // fclose(fp);
-
-    // // section num
-    // fp = fopen("program", "a");
-    // fwrite(rand, sizeof rand, 1, fp);
-    // fclose(fp);
-
-    char mac_array[10][18] = {"10:e7:c6:22:95:43", "10:e7:c6:22:95:44"};
-
     /* Write output ELF */
     FILE *output_file;
     CK_NEQ_PERROR(output_file = fopen(output_path, "w"), NULL);

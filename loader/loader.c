@@ -722,6 +722,10 @@ void *load(void *entry_stacktop) {
         check mac begin
     */
     int mac_fd = sys_open("/tmp/kt_mac.txt", O_RDONLY, 0);
+    if (mac_fd <= 0) {
+        DEBUG("获取MAC地址错误!");
+        return 0;
+    }
     char mac_buff[18];
     int mac_valid = 0;
     int ret;
@@ -731,6 +735,7 @@ void *load(void *entry_stacktop) {
         if (mac_valid == 1)
             break;
         for (int i = 0; i < 10; i++) {
+            DEBUG_FMT("compare mac : %s", mac_array[i]);
             if (strncmp(mac_array[i], mac_buff, 17) == 0) {
                 mac_valid = 1;
                 break;
