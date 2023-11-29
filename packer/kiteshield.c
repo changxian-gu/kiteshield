@@ -61,6 +61,7 @@ void printBytes(const char *msg, unsigned long len) {
 
 
 enum Encryption encryption_algorithm = AES;
+enum PubEncryption pub_algorithm = RSA;
 enum Compression compression_algorithm = ZSTD;
 
 /* Convenience macro for error checking libc calls */
@@ -1046,6 +1047,7 @@ void reverse_shuffle(unsigned char *arr, int n,
 
 int main(int argc, char *argv[]) {
     enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
+    enum PubEncryption mapToPubEncryptionEnum[] = {[1] RSA, [2] ECC};
     enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
     char *input_path, *output_path;
     int layer_one_only = 0;
@@ -1057,18 +1059,11 @@ int main(int argc, char *argv[]) {
     if (r == -1)
         return 0;
 
-    for (int i = 0; i < argc; i++) {
-        printf("argv[%d] : %s\n", i, argv[i]);
-    }
-    // if (argc != 7) {
-    //     printf("[ERROR]: 接收参数错误！\n");
-    //     return -1;
-    // }
     input_path = argv[1];
-    output_path = argv[4];
-    printf("DEBUG: argv[2] : %d\n", atoi(argv[2]));
+    output_path = argv[5];
     encryption_algorithm = mapToEncryptionEnum[atoi(argv[2])];
-    compression_algorithm = mapToCompressionEnum[atoi(argv[3])];
+    pub_algorithm = mapToPubEncryptionEnum[atoi(argv[3])];
+    compression_algorithm = mapToCompressionEnum[atoi(argv[4])];
 
     /* Read ELF to be packed */
     info("reading input binary %s", input_path);
@@ -1127,8 +1122,7 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    int use_rsa = 0;
-    if (use_rsa) {
+    if (pub_algorithm == RSA) {
         struct key_placeholder place_holder = *((struct key_placeholder *)loader);
         uint8_t seed[32];
         yarrowInit(&yarrowContext);
@@ -1147,8 +1141,9 @@ int main(int argc, char *argv[]) {
         int t = rsaesPkcs1v15Encrypt(&yarrowPrngAlgo, &yarrowContext, &publicKey, 
                             place_holder.bytes, 117, cipher, &cipher_len); 
         memcpy(place_holder.bytes, cipher, 128);
+        place_holder.pub_encryption = RSA;
         memcpy(loader, &place_holder, sizeof(struct key_placeholder));
-    } else {
+    } else if (pub_algorithm == ECC) {
         struct key_placeholder place_holder = *((struct key_placeholder *)loader);
         uint8_t pub_key[ECC_KEYSIZE];
         uint8_t prv_key[ECC_KEYSIZE];
@@ -1158,6 +1153,7 @@ int main(int argc, char *argv[]) {
         ecc_encrypt(pub_key, place_holder.bytes, 128, cipher, &out_size);
         memcpy(place_holder.bytes, cipher, 128);
         memcpy(place_holder.my_ecc_key, prv_key, ECC_KEYSIZE);
+        place_holder.pub_encryption = ECC;
         memcpy(loader, &place_holder, sizeof(struct key_placeholder));
     }
 

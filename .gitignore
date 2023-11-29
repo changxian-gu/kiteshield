@@ -14,6 +14,8 @@ loader/test/out/
 testing/out
 packer/kiteshield
 loader/include/obfuscated_strings.h
+hello_world
+hello_world_pak
 
 # Packed binaries
 *.ks

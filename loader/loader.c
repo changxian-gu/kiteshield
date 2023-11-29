@@ -873,8 +873,7 @@ void *load(void *entry_stacktop) {
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
     }
-    int use_rsa = 0;
-    if (use_rsa) {
+    if (obfuscated_key.pub_encryption == RSA) {
         // 解析出Rsa私钥，并对对称密钥解密
         RsaPrivateKey private_key;
         rsaInitPrivateKey(&private_key);
@@ -892,7 +891,7 @@ void *load(void *entry_stacktop) {
         error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 128, &message_len);
         DEBUG_FMT("decrypt error:%d", error);
         memcpy(obfuscated_key.bytes, output,message_len);
-    } else {
+    } else if (obfuscated_key.pub_encryption == ECC) {
         uint8_t output[128];
         int out_size;
         uint8_t prv_key[ECC_KEYSIZE];
