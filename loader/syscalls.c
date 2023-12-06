@@ -380,3 +380,14 @@ int sys_exec(const char *path, char *const argv[], char *const envp[]) {
 
     return ret;
 }
+
+void sys_usleep(unsigned int usec) {
+    asm volatile (
+        "mov $35, %%rax\n"       // 将系统调用号35（对应于usleep）加载到rax寄存器中
+        "mov %0, %%rdi\n"        // 将usec参数加载到rdi寄存器中
+        "syscall\n"              // 触发系统调用
+        :
+        : "rm" (usec)
+        : "rax", "rdi"
+    );
+}

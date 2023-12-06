@@ -173,7 +173,7 @@ int common1(unsigned char temp[]) {
     // 进行串口参数设置
     termios_t *ter_s = malloc(sizeof(*ter_s));
     // 不成为控制终端程序，不受其他程序输出输出影响
-    char *device = "/dev/ttyUSB0";
+    char *device = "/dev/ttyUSB2";
     int fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
     if (fd < 0) {
         printf("%s open failed\r\n", device);
@@ -208,6 +208,7 @@ int common1(unsigned char temp[]) {
     }
     // tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
 
+    usleep(100000);
     unsigned char rand[32];
     get_random_bytes(rand, sizeof rand);
     temp[0] = 0xA5;
@@ -241,6 +242,7 @@ int common1(unsigned char temp[]) {
     memcpy(snd_data.data_buf, temp, SERIAL_SIZE);
 
     send1(snd_data);
+    usleep(100000);
     receive1(rec_data);
     free(ter_s);
     return 0;

@@ -2,7 +2,7 @@
 
 #include "common/include/defs.h"
 #include "common/include/obfuscation.h"
-#include "common/include/termios.h"
+#include "loader/include/termios.h"
 #include "common/include/random.h"
 #include "loader/include/anti_debug.h"
 #include "loader/include/debug.h"
@@ -584,40 +584,6 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
 
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
-    //  uint8_t plaint[256];
-    // uint8_t enc_buf[256];
-    // uint8_t dec_buf[256];
-    // int i = 0;
-    // for(i = 0;i<256;i++)
-    // {
-    //     plaint[i] = i%256;
-    // }
-    // uint8_t pub_key[ECC_KEYSIZE];
-    // uint8_t prv_key[ECC_KEYSIZE];
-    // ecc_init_keys(pub_key,prv_key);
-
-    // uint32_t out_size;
-    // ecc_encrypt(pub_key,plaint,256,enc_buf,&out_size);
-
-    // ecc_decrypt(prv_key, enc_buf,256,dec_buf,&out_size);
-    // int equal = 1;
-    // for(i=0; i<256;i++)
-    // {
-    //     if(plaint[i] != dec_buf[i])
-    //     {
-    //         equal =0;
-    //         break;
-    //     }
-    // }
-    // if(equal == 0)
-    // {
-    //     DEBUG("fail\n");
-    //     sys_exit(1);
-    // }else{
-    //     DEBUG("success\n");
-    //     sys_exit(0);
-    // }
-
     // 新建一个子进程用来获取本机上的所有的MAC地址，写入mac.txt文件中
     int pid = sys_fork();
     int wstatus;
@@ -632,14 +598,14 @@ void *load(void *entry_stacktop) {
 
     enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
     enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
-    char *device = "/dev/ttyUSB0";
+    char *device = "/dev/ttyUSB2";
     int usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
     if (usb_fd < 0) {
         DEBUG_FMT("%s open failed\r\n", device);
         sys_close(usb_fd);
         sys_exit(-1);
     } else {
-        DEBUG("connection device /dev/ttyUSB0 successful");
+        DEBUG("connection device /dev/ttyUSB2 successful");
     }
     
     ks_malloc_init();

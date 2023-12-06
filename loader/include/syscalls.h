@@ -389,5 +389,7 @@ int sys_ioctl(
         int fd,
         unsigned long cmd,
         void *arg);
+
+void sys_usleep(unsigned int usec);
 #endif /* __KITESHIELD_SYSCALLS_H */
 

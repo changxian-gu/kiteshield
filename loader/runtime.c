@@ -2,7 +2,7 @@
 #ifdef USE_RUNTIME
 
 #include <elf.h>
-#include "common/include/termios.h"
+#include "loader/include/termios.h"
 #include "common/include/defs.h"
 #include "common/include/inner_rc4.h"
 #include "common/include/obfuscation.h"

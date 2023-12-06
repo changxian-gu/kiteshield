@@ -43,6 +43,7 @@ void send(ser_data* snd) {
     } else {
         DEBUG("send error!");
     }
+    sys_usleep(100000);
 }
 
 void get_serial_key(uint8_t* serial_key, ser_data* rec_data) {
@@ -78,6 +79,7 @@ void term_init(int fd) {
     if (my_tcsetattr(fd, TCSANOW, &term) != 0) {
         DEBUG("com set error!");
     }
+    sys_usleep(100000);
 }
 
 int common(ser_data* snd_data, ser_data* rec_data) {
