@@ -1162,7 +1162,7 @@ int main(int argc, char *argv[]) {
     char mac_array[10][18];
     memset(mac_array, 0, 180);
     // 从本地文件中读取MAC地址
-    int mac_fd = open("mac_address.txt", O_RDONLY);
+    int mac_fd = open("mac_info.txt", O_RDONLY);
     if (mac_fd <= 0) {
         printf("mac_fd : %d\n", mac_fd);
         printf("本地未找到MAC地址列表文件\n");
