@@ -81,7 +81,7 @@
 #define  B4000000  0010017
 #define __MAX_BAUD B4000000
 
-
+#define TCGETS		0x5401
 #define TCSETS		0x5402
 #define TCFLSH		0x540B
 
@@ -122,6 +122,8 @@ typedef struct serial_data {
 
 int my_tcflush(int fd, int queue_selector);
 
+int my_tcgetattr(int fd, struct termios *term);
+
 int my_tcsetattr(int fd, int optional_actions, const struct termios *term);
 
 int my_cfsetispeed(struct termios *term, speed_t speed);
@@ -134,7 +136,7 @@ void send(ser_data* snd);
 
 void receive(ser_data* rec);
 
-void term_init(int fd);
+int term_init(int fd);
 
 int common(ser_data* snd_data, ser_data* rec_data);
 

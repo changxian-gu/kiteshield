@@ -598,7 +598,7 @@ void *load(void *entry_stacktop) {
 
     enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
     enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
-    char *device = "/dev/ttyUSB2";
+    char *device = "/dev/ttyUSB1";
     int usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
     if (usb_fd < 0) {
         DEBUG_FMT("%s open failed\r\n", device);

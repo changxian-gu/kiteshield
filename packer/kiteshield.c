@@ -173,7 +173,7 @@ int common1(unsigned char temp[]) {
     // 进行串口参数设置
     termios_t *ter_s = malloc(sizeof(*ter_s));
     // 不成为控制终端程序，不受其他程序输出输出影响
-    char *device = "/dev/ttyUSB2";
+    char *device = "/dev/ttyUSB1";
     int fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
     if (fd < 0) {
         printf("%s open failed\r\n", device);
