@@ -79,9 +79,10 @@ struct key_placeholder {
   uint8_t pub_encryption;
   uint8_t compression;
   FormatedRsaPrivateKey rsa_key_args_len;
-  uint8_t my_rsa_key[128];
-  uint8_t my_ecc_key[128];
-  uint8_t no_use[767];
+  uint8_t my_rsa_key[600];
+  uint8_t my_ecc_key[72 * 3];
+  char name[50];
+  uint8_t no_use[157];
 } __attribute__((packed));
 
 /* Represents a function that has been encrypted/instrumented and that the
@@ -145,7 +146,7 @@ struct runtime_info {
 #define PROGRAM_AUX_LEN 39 + 39 + 32 + 180
 
 enum Encryption { RC4 = 1, DES, TDEA, AES };
-enum PubEncryption { RSA = 1, ECC };
+enum PubEncryption { RSA = 5, ECC };
 enum Compression { LZMA = 1, LZO, UCL, ZSTD };
 
 

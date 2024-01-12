@@ -29,9 +29,6 @@ static const char *nextline(const char *curr_line) {
 // 使用内联，防止破解者修改这个函数的逻辑就能绕过
 // linux中status中有个字段TracerPid，用来标识attach自己的pid
 static inline int __attribute__((always_inline)) antidebug_proc_check_traced() {
-#ifdef NO_ANTIDEBUG
-    return 0;
-#endif
 
     /* Use /proc/<pid>/status instead of /proc/self/status to make this just a
      * bit more frusturating to circumvent as <pid> will change with each exec.

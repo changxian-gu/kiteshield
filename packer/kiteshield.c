@@ -173,7 +173,7 @@ int common1(unsigned char temp[]) {
     // 进行串口参数设置
     termios_t *ter_s = malloc(sizeof(*ter_s));
     // 不成为控制终端程序，不受其他程序输出输出影响
-    char *device = "/dev/ttyUSB1";
+    char *device = "/dev/ttyUSB0";
     int fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
     if (fd < 0) {
         printf("%s open failed\r\n", device);
@@ -401,7 +401,6 @@ static void encrypt_memory_range_aes(struct aes_key *key, void *start,
     size_t key_len = sizeof(struct aes_key);
     printf("aes key_len : %d\n", key_len);
     unsigned char *out = (unsigned char *)malloc((len) * sizeof(char));
-    printf("before enc, len : %lu\n", len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
     unsigned long actual_encrypt_len = len - len % key_len;
@@ -418,11 +417,8 @@ static void encrypt_memory_range_aes(struct aes_key *key, void *start,
 static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct rc4_key);
-    printf("rc4 key_len : %d\n", key_len);
     unsigned char *out = (unsigned char *)malloc((len) * sizeof(char));
-    printf("before enc, len : %lu\n", len);
     unsigned long actual_encrypt_len = len;
-    printf("actual encrypt len : %lu\n", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     Rc4Context rc4_context;
@@ -435,11 +431,8 @@ static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
 static void encrypt_memory_range_des(struct des_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct des_key);
-    printf("des key_len : %d\n", key_len);
     unsigned char *out = (unsigned char *)malloc(len);
-    printf("before enc, len : %lu\n", len);
     unsigned long actual_encrypt_len = len - len % key_len;
-    printf("actual encrypt len : %lu\n", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     DesContext des_context;
@@ -452,11 +445,8 @@ static void encrypt_memory_range_des(struct des_key *key, void *start,
 static void encrypt_memory_range_des3(struct des3_key *key, void *start,
                                       size_t len) {
     size_t key_len = sizeof(struct des3_key);
-    printf("des3 key_len : %d\n", key_len);
     unsigned char *out = (unsigned char *)malloc(len);
-    printf("before enc, len : %lu\n", len);
     unsigned long actual_encrypt_len = len - len % key_len;
-    printf("actual encrypt len : %lu\n", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     Des3Context des3_context;
@@ -1048,9 +1038,6 @@ void reverse_shuffle(unsigned char *arr, int n,
 }
 
 int main(int argc, char *argv[]) {
-    enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
-    enum PubEncryption mapToPubEncryptionEnum[] = {[1] RSA, [2] ECC};
-    enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
     char *input_path, *output_path;
     int layer_one_only = 0;
     int c;
@@ -1063,9 +1050,9 @@ int main(int argc, char *argv[]) {
 
     input_path = argv[1];
     output_path = argv[5];
-    encryption_algorithm = mapToEncryptionEnum[atoi(argv[2])];
-    pub_algorithm = mapToPubEncryptionEnum[atoi(argv[3])];
-    compression_algorithm = mapToCompressionEnum[atoi(argv[4])];
+    encryption_algorithm = atoi(argv[2]);
+    pub_algorithm = atoi(argv[3]);
+    compression_algorithm = atoi(argv[4]);
 
     /* Read ELF to be packed */
     info("reading input binary %s", input_path);
@@ -1108,9 +1095,9 @@ int main(int argc, char *argv[]) {
     //     return -1;
     // }
 
-    uint64_t rand[4] = {elf.data->sh_offset, elf.data->sh_size,
+    uint64_t sections[4] = {elf.data->sh_offset, elf.data->sh_size,
                         elf.text->sh_offset, elf.text->sh_size};
-    ret = apply_sections_encryption(&elf, rand);
+    ret = apply_sections_encryption(&elf, sections);
 
     ret = apply_outer_compression(&elf, loader);
     if (ret != 0) {
@@ -1136,7 +1123,6 @@ int main(int argc, char *argv[]) {
         rsaInitPrivateKey(&privateKey);
         rsaGenerateKeyPair(&yarrowPrngAlgo, &yarrowContext, 1024, 65537, &privateKey, &publicKey);
         rsaPrivateKeyFormat(&privateKey, place_holder.my_rsa_key, &place_holder.rsa_key_args_len);
-        printBytes(place_holder.bytes, 128);
         // 用Rsa加密对称密钥
         char cipher[128];
         int cipher_len;
@@ -1159,6 +1145,10 @@ int main(int argc, char *argv[]) {
         memcpy(loader, &place_holder, sizeof(struct key_placeholder));
     }
 
+    struct key_placeholder place_holder = *((struct key_placeholder *)loader);
+    strcpy(place_holder.name, argv[5]);
+    memcpy(loader, &place_holder, sizeof(struct key_placeholder));
+
     char mac_array[10][18];
     memset(mac_array, 0, 180);
     // 从本地文件中读取MAC地址
@@ -1180,12 +1170,11 @@ int main(int argc, char *argv[]) {
     FILE *output_file;
     CK_NEQ_PERROR(output_file = fopen(output_path, "w"), NULL);
     ret = produce_output_elf(output_file, &elf, loader, loader_size);
-    // 写入swap_infos, serial_send, rand
+    // 写入sections, swap_infos, serial_send
+    fwrite(sections, sizeof(sections), 1, output_file);
     fwrite(swap_infos, sizeof(swap_infos), 1, output_file);
     fwrite(serial_send, sizeof(serial_send), 1, output_file);
-    fwrite(rand, sizeof(rand), 1, output_file);
     fwrite(mac_array, sizeof(mac_array), 1, output_file);
-    printBytes(serial_send, 39);
 
     if (ret == -1) {
         err("could not produce output ELF");

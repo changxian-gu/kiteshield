@@ -280,19 +280,15 @@ static void decrypt_packed_bin_aes(void *packed_bin_start,
                                    size_t packed_bin_size,
                                    struct aes_key *key) {
     DEBUG_FMT("AES decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
     // 只解密密钥整数倍的长度的密文
     unsigned long t =
         packed_bin_size - packed_bin_size % sizeof(struct aes_key);
     char *out = (char *)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d\n", *(char *)out);
     AesContext aes_context;
     aesInit(&aes_context, key->bytes, sizeof(struct aes_key));
     ecbDecrypt(AES_CIPHER_ALGO, &aes_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d\n", *((char *)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
@@ -302,19 +298,15 @@ static void decrypt_packed_bin_des(void *packed_bin_start,
                                    size_t packed_bin_size,
                                    struct des_key *key) {
     DEBUG_FMT("DES decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
 
     unsigned long t =
         packed_bin_size - packed_bin_size % sizeof(struct des_key);
     char *out = (char *)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d\n", *(char *)out);
     DesContext des_context;
     desInit(&des_context, key->bytes, sizeof(struct des_key));
     ecbDecrypt(DES_CIPHER_ALGO, &des_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d\n", *((char *)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
@@ -324,19 +316,15 @@ static void decrypt_packed_bin_des3(void *packed_bin_start,
                                     size_t packed_bin_size,
                                     struct des3_key *key) {
     DEBUG_FMT("DES3 decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
 
     unsigned long t =
         packed_bin_size - packed_bin_size % sizeof(struct des3_key);
     char *out = (char *)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d\n", *(char *)out);
     Des3Context des3_context;
     des3Init(&des3_context, key->bytes, sizeof(struct des3_key));
     ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d\n", *((char *)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
@@ -346,18 +334,14 @@ static void decrypt_packed_bin_rc4(void *packed_bin_start,
                                    size_t packed_bin_size,
                                    struct rc4_key *key) {
     DEBUG_FMT("RC4 decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
 
     // DEBUG_FMT("open serial %d\n", serial_communication());
 
     unsigned long t = packed_bin_size;
     char *out = (char *)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d\n", *(char *)out);
     Rc4Context rc4_context;
     rc4Init(&rc4_context, key->bytes, sizeof(struct rc4_key));
     rc4Cipher(&rc4_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d\n", *((char *)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
@@ -515,13 +499,10 @@ static int get_key(void *buf, size_t len) {
 static void encrypt_memory_range_aes(struct aes_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct aes_key);
-    DEBUG_FMT("aes key_len : %d\n", key_len);
     unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
-    DEBUG_FMT("before enc, len : %d\n", len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : %d\n", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     AesContext aes_context;
@@ -534,11 +515,8 @@ static void encrypt_memory_range_aes(struct aes_key *key, void *start,
 static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct rc4_key);
-    DEBUG_FMT("rc4 key_len : %d\n", key_len);
     unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
-    DEBUG_FMT("before enc, len : d\n", len);
     unsigned long actual_encrypt_len = len;
-    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     Rc4Context rc4_context;
@@ -551,11 +529,8 @@ static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
 static void encrypt_memory_range_des(struct des_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct des_key);
-    DEBUG_FMT("des key_len : %d\n", key_len);
     unsigned char *out = (unsigned char *)ks_malloc(len);
-    DEBUG_FMT("before enc, len : d\n", len);
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     DesContext des_context;
@@ -568,11 +543,8 @@ static void encrypt_memory_range_des(struct des_key *key, void *start,
 static void encrypt_memory_range_des3(struct des3_key *key, void *start,
                                       size_t len) {
     size_t key_len = sizeof(struct des3_key);
-    DEBUG_FMT("des3 key_len : %d\n", key_len);
     unsigned char *out = (unsigned char *)ks_malloc(len);
-    DEBUG_FMT("before enc, len : d\n", len);
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     Des3Context des3_context;
@@ -596,9 +568,26 @@ void *load(void *entry_stacktop) {
         sys_wait4(pid, &wstatus, __WALL);
     }
 
-    enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
-    enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
-    char *device = "/dev/ttyUSB1";
+    char* prog_name = obfuscated_key.name;
+    // 拷贝一个临时文件
+    pid = sys_fork();
+    if (pid == 0) {
+        const char *shell = "/bin/sh";
+        char true_shell[200] = "/bin/cp ";
+        int s_idx = strlen(true_shell);
+        strncpy(true_shell + s_idx, prog_name, strlen(prog_name));
+        s_idx += strlen(prog_name);
+        true_shell[s_idx++] = ' ';
+        strncpy(true_shell + s_idx, "/tmp/kt_program", 16);
+
+        char *const args[] = {"/bin/sh", "-c", true_shell, NULL};
+        char *const env[] = {NULL};
+        sys_exec(shell, args, env);
+    } else {
+        sys_wait4(pid, &wstatus, __WALL);
+    }
+
+    char *device = "/dev/ttyUSB0";
     int usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
     if (usb_fd < 0) {
         DEBUG_FMT("%s open failed\r\n", device);
@@ -612,15 +601,6 @@ void *load(void *entry_stacktop) {
     // 反调试功能, 具体怎么反调试的?
     if (antidebug_proc_check_traced())
         DIE(TRACED_MSG);
-    antidebug_remove_ld_env_vars(entry_stacktop);
-
-    /* Disable core dumps via rlimit here before we start doing sensitive stuff
-     * like key deobfuscation and binary decryption. Child process should
-     * inherit these limits after the fork, although it wouldn't hurt to call
-     * this again post-fork just in case this inlined call is patched out. */
-    antidebug_rlimit_set_zero_core();
-
-
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
@@ -629,8 +609,8 @@ void *load(void *entry_stacktop) {
     enum Encryption encryption_algorithm = AES;
     enum Compression compression_algorithm = ZSTD;
     // get the alogorithm type
-    encryption_algorithm = mapToEncryptionEnum[obfuscated_key.encryption];
-    compression_algorithm = mapToCompressionEnum[obfuscated_key.compression];
+    encryption_algorithm = obfuscated_key.encryption;
+    compression_algorithm = obfuscated_key.compression;
 
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     // hello_world_pak
@@ -655,33 +635,17 @@ void *load(void *entry_stacktop) {
     uint64_t sections[4];
     char mac_array[10][18];
     // 获取program中的部分信息
-    int fd = sys_open("/tmp/kt_program", O_RDONLY, 0);
-    // 如果当前目录不存在此文件, 首先把packed_bin写入到program中
-    if (fd < 0) {
-        DEBUG("no program , creating program and writing infomation..");
-        fd = sys_open("/tmp/kt_program", O_CREAT | O_RDWR, 0777);
-        sys_write(fd, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz + PROGRAM_AUX_LEN);
-        int tmp_p = packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
-        memcpy(swap_infos, tmp_p, SERIAL_SIZE);
-        tmp_p += SERIAL_SIZE;
-        memcpy(old_serial_shuffled, tmp_p, SERIAL_SIZE);
-        tmp_p += SERIAL_SIZE;
-        memcpy(sections, tmp_p, sizeof(sections));
-        tmp_p += sizeof(sections);
-        // 读取MAC地址
-        memcpy(mac_array, tmp_p, sizeof(mac_array));
-    } else {
-        sys_read(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
-        DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
+    uint8_t* tmp_p = (uint8_t*)packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
+    memcpy(sections, tmp_p, sizeof(sections));
+    tmp_p += sizeof(sections);
+    // 与非PUF唯一区别为：密钥换成了一个替换数组和激励
+    memcpy(swap_infos, tmp_p, SERIAL_SIZE);
+    tmp_p += SERIAL_SIZE;
+    memcpy(old_serial_shuffled, tmp_p, SERIAL_SIZE);
+    tmp_p += SERIAL_SIZE;
+    // 读取MAC地址
+    memcpy(mac_array, tmp_p, sizeof(mac_array));
 
-        sys_read(fd, swap_infos, SERIAL_SIZE);
-
-        sys_read(fd, old_serial_shuffled, sizeof old_serial_shuffled);
-        //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
-        sys_read(fd, sections, sizeof sections);
-        // 读取MAC地址
-        sys_read(fd, mac_array, sizeof(mac_array));
-    }
 
     /*
         读取mac.txt文件，看其中的地址是否在白名单mac_array中
@@ -701,7 +665,6 @@ void *load(void *entry_stacktop) {
         if (mac_valid == 1)
             break;
         for (int i = 0; i < 10; i++) {
-            DEBUG_FMT("compare mac : %s", mac_array[i]);
             if (strncmp(mac_array[i], mac_buff, 17) == 0) {
                 mac_valid = 1;
                 break;
@@ -718,7 +681,6 @@ void *load(void *entry_stacktop) {
     */
 
     printBytes1(old_serial_shuffled, 39);
-    sys_close(fd);
 
     reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);
 
@@ -954,11 +916,28 @@ void *load(void *entry_stacktop) {
 
     // 写回program
     int prog_fd = sys_open("/tmp/kt_program", O_RDWR, 0777);
+    sys_lseek(prog_fd, sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 2 + loader_size, SEEK_SET);
     sys_write(prog_fd, bin_new, packed_bin_phdr->p_filesz);
+    sys_write(prog_fd, (char*)sections, sizeof(sections));
     shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
     sys_write(prog_fd, swap_infos, SERIAL_SIZE);
     sys_write(prog_fd, snd_data.data_buf, SERIAL_SIZE);
+    sys_write(prog_fd, (char*)mac_array, sizeof(mac_array));
     sys_close(prog_fd);
+
+    pid = sys_fork();
+    if (pid == 0) {
+        char true_shell[200] = "/bin/mv /tmp/kt_program ";
+        int s_idx = strlen(true_shell);
+        strncpy(true_shell + s_idx, prog_name, strlen(prog_name));
+
+        const char *shell = "/bin/sh";
+        char *const args[] = {"/bin/sh", "-c", true_shell, NULL};
+        char *const env[] = {NULL};
+        sys_exec(shell, args, env);
+    } else {
+        sys_wait4(pid, &wstatus, __WALL);
+    }
     /*
         持久化---end
     */
