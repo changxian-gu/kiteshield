@@ -49,7 +49,9 @@
         "optional": "c",
         "termio.h": "c",
         "termios.h": "c",
-        "myargs.h": "c"
+        "myargs.h": "c",
+        "ecc.h": "c",
+        "ucl.h": "c"
     },
     "C_Cpp.errorSquiggles": "disabled"
 }

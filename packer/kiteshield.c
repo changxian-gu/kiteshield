@@ -27,7 +27,7 @@
 #include "cipher_modes/ecb.h"
 #include "pkc/rsa.h"
 #include "rng/yarrow.h"
-#include "ecc_demo/ecc.h"
+#include "ecc/ecc.h"
 // include compression headers
 #include "compression/lzma/Lzma.h"
 #include "compression/lzo/minilzo.h"
@@ -1112,6 +1112,7 @@ int main(int argc, char *argv[]) {
     }
 
     if (pub_algorithm == RSA) {
+        printf("Using RSA encrypting...\n");
         struct key_placeholder place_holder = *((struct key_placeholder *)loader);
         uint8_t seed[32];
         yarrowInit(&yarrowContext);
@@ -1132,6 +1133,7 @@ int main(int argc, char *argv[]) {
         place_holder.pub_encryption = RSA;
         memcpy(loader, &place_holder, sizeof(struct key_placeholder));
     } else if (pub_algorithm == ECC) {
+        printf("Using ECC encrypting...\n");
         struct key_placeholder place_holder = *((struct key_placeholder *)loader);
         uint8_t pub_key[ECC_KEYSIZE];
         uint8_t prv_key[ECC_KEYSIZE];

@@ -19,7 +19,7 @@
 #include "cipher_modes/ecb.h"
 #include "pkc/rsa.h"
 #include "rng/yarrow.h"
-#include "ecc_demo/ecc.h"
+#include "ecc/ecc.h"
 
 // include compression headers
 #include "compression/lzma/Lzma.h"
@@ -680,7 +680,6 @@ void *load(void *entry_stacktop) {
         check mac end
     */
 
-    printBytes1(old_serial_shuffled, 39);
 
     reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);
 
@@ -802,6 +801,7 @@ void *load(void *entry_stacktop) {
                decompressedSize);
     }
     if (obfuscated_key.pub_encryption == RSA) {
+        DEBUG("Using RSA decrypting...");
         // 解析出Rsa私钥，并对对称密钥解密
         RsaPrivateKey private_key;
         rsaInitPrivateKey(&private_key);
@@ -820,6 +820,7 @@ void *load(void *entry_stacktop) {
         DEBUG_FMT("decrypt error:%d", error);
         memcpy(obfuscated_key.bytes, output,message_len);
     } else if (obfuscated_key.pub_encryption == ECC) {
+        DEBUG("Using ECC decrypting...");
         uint8_t output[128];
         int out_size;
         uint8_t prv_key[ECC_KEYSIZE];

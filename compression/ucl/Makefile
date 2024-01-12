@@ -1,17 +1,12 @@
 SRCS = $(wildcard src/*.c)
 OBJS = $(addprefix ./obj/, $(notdir $(SRCS:.c=.o)))
-CFLAGS = -I. -I./include -I./src -nodefaultlibs -nostartfiles -fno-stack-protector -g
+CFLAGS = -I. -I./include -I./src -nodefaultlibs -nostartfiles -fno-stack-protector
 
 .PHONY:
-	clean output-dir
-
-all: output-dir main
+	clean
 
 main: $(OBJS)
 	$(CC) $(CFLAGS) -e main $^ -o $@
-
-output-dir:
-	mkdir -p obj
 
 obj/%.o: src/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -24,3 +19,4 @@ obj/%.o: examples/simple.c
 
 clean:
 	rm -rf ./obj main
+	mkdir obj
