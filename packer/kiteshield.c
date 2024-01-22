@@ -1037,23 +1037,95 @@ void reverse_shuffle(unsigned char *arr, int n,
     }
 }
 
+int hexStringToByteArray(const char *hexString, unsigned char *byteArray, int byteArraySize) {
+    int count = 0;
+    const char *pos = hexString;
+
+    // 转换16进制字符串为字节数组
+    while (count < byteArraySize && sscanf(pos, "%2hhx", &byteArray[count]) == 1) {
+        pos += 2;
+        count++;
+    }
+
+    return count; // 返回转换的字节数
+}
+
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
     int layer_one_only = 0;
     int c;
     int ret;
 
-    unsigned char serial_send[SERIAL_SIZE];
-    int r = common1(serial_send);
-    if (r == -1)
-        return 0;
+    // int r = common1(serial_send);
+    // if (r == -1)
+    //     return 0;
 
     input_path = argv[1];
     output_path = argv[5];
     encryption_algorithm = atoi(argv[2]);
     pub_algorithm = atoi(argv[3]);
     compression_algorithm = atoi(argv[4]);
+    const char* puf_path = argv[6];
+    const char* mac_path = argv[7];
 
+    FILE *file = fopen(puf_path, "r"); // 替换为你的文件名
+    if (file == NULL) {
+        perror("Failed to open file");
+        return EXIT_FAILURE;
+    }
+
+    // 假设每行不超过255个字符
+    char line1[256];
+    char line2[256];
+    char line3[256];
+
+    // 读取第一行
+    if (fgets(line1, sizeof(line1), file) == NULL) {
+        perror("Failed to read line 1");
+        fclose(file);
+        return EXIT_FAILURE;
+    }
+
+    // 读取第二行
+    if (fgets(line2, sizeof(line2), file) == NULL) {
+        perror("Failed to read line 2");
+        fclose(file);
+        return EXIT_FAILURE;
+    }
+
+    // 读取第三行
+    if (fgets(line3, sizeof(line3), file) == NULL) {
+        perror("Failed to read line 3");
+        fclose(file);
+        return EXIT_FAILURE;
+    }
+
+    // 打印读取的内容
+    printf("Line 1: %s", line1);
+    printf("Line 2: %s", line2);
+    printf("Line 3: %s", line3);
+
+    // 关闭文件
+    fclose(file);
+    
+    // 创建字节数组
+    const int serial_length = 39;
+    unsigned char byteArrayLine2[serial_length];
+    unsigned char byteArrayLine3[serial_length];
+
+    // 转换字符串为字节数组
+    int convertedCount2 = hexStringToByteArray(line2, byteArrayLine2, serial_length);
+    int convertedCount3 = hexStringToByteArray(line3, byteArrayLine3, serial_length);
+
+    // 检查转换的结果
+    if (convertedCount2 != serial_length || convertedCount3 != serial_length) {
+        printf("Conversion error\n");
+        return EXIT_FAILURE;
+    }
+
+    unsigned char serial_send[SERIAL_SIZE];
+    memcpy(serial_send, byteArrayLine2, SERIAL_SIZE);
+    memcpy(serial_key, byteArrayLine3 + 4, 16);
     /* Read ELF to be packed */
     info("reading input binary %s", input_path);
     struct mapped_elf elf;
