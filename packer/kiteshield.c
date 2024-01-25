@@ -948,6 +948,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
+    printf("[STATE] node:1 ; message:PUF交互\n");
     // 打印读取的内容
     printf("Line 1: %s", line1);
     printf("Line 2: %s", line2);
@@ -958,6 +959,7 @@ int main(int argc, char *argv[]) {
     
     // 创建字节数组
     const int serial_length = 39;
+    printf("[STATE] node:2 ; message:获取密钥\n");
     unsigned char puf_key[serial_length];
     unsigned char puf_value[serial_length];
 
@@ -991,6 +993,7 @@ int main(int argc, char *argv[]) {
     // 是否需要对内层加密
     if (!layer_one_only) {
         struct runtime_info *rt_info = NULL;
+        printf("[STATE] node:3 ; message:函数加密\n");
         ret = apply_inner_encryption(&elf, &rt_info);
         if (ret == -1) {
             err("could not apply inner encryption");
@@ -1008,13 +1011,15 @@ int main(int argc, char *argv[]) {
 
     uint64_t sections[4] = {elf.data->sh_offset, elf.data->sh_size,
                         elf.text->sh_offset, elf.text->sh_size};
+    printf("[STATE] node:4 ; message:段加密\n");
     ret = apply_sections_encryption(&elf, sections);
+    printf("[STATE] node:5 ; message:压缩\n");
 
     ret = apply_outer_compression(&elf, loader);
     if (ret != 0) {
         printf("[compression]: something wrong!\n");
     }
-
+    printf("[STATE] node:6 ; message:整体加密\n");
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);
     if (ret == -1) {
@@ -1082,6 +1087,8 @@ int main(int argc, char *argv[]) {
     /* Write output ELF */
     FILE *output_file;
     CK_NEQ_PERROR(output_file = fopen(output_path, "w"), NULL);
+    printf("[STATE] node:7 ; message:加壳\n");
+
     ret = produce_output_elf(output_file, &elf, loader, loader_size);
     // 写入sections, swap_infos, puf_key
     fwrite(sections, sizeof(sections), 1, output_file);
@@ -1100,6 +1107,7 @@ int main(int argc, char *argv[]) {
         -1);
 
     info("output ELF has been written to %s", output_path);
+    printf("[STATE] node:8 ; message:成功\n");
     ks_malloc_deinit();
     return 0;
 }
