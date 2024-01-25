@@ -587,15 +587,6 @@ void *load(void *entry_stacktop) {
         sys_wait4(pid, &wstatus, __WALL);
     }
 
-    char *device = "/dev/ttyUSB0";
-    int usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
-    if (usb_fd < 0) {
-        DEBUG_FMT("%s open failed\r\n", device);
-        sys_close(usb_fd);
-        sys_exit(-1);
-    } else {
-        DEBUG("connection device /dev/ttyUSB2 successful");
-    }
     
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
@@ -631,7 +622,7 @@ void *load(void *entry_stacktop) {
     // DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
     unsigned char swap_infos[SERIAL_SIZE];
-    unsigned char old_serial_shuffled[SERIAL_SIZE];
+    unsigned char old_puf_key[SERIAL_SIZE];
     uint64_t sections[4];
     char mac_array[10][18];
     // 获取program中的部分信息
@@ -641,11 +632,15 @@ void *load(void *entry_stacktop) {
     // 与非PUF唯一区别为：密钥换成了一个替换数组和激励
     memcpy(swap_infos, tmp_p, SERIAL_SIZE);
     tmp_p += SERIAL_SIZE;
-    memcpy(old_serial_shuffled, tmp_p, SERIAL_SIZE);
+    memcpy(old_puf_key, tmp_p, SERIAL_SIZE);
     tmp_p += SERIAL_SIZE;
     // 读取MAC地址
     memcpy(mac_array, tmp_p, sizeof(mac_array));
 
+    // 是否使用PUF
+    int protect_mode = 1;
+    if (old_puf_key[38] == 0)
+        protect_mode = 0;
 
     /*
         读取mac.txt文件，看其中的地址是否在白名单mac_array中
@@ -680,19 +675,32 @@ void *load(void *entry_stacktop) {
         check mac end
     */
 
-
-    reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);
-
-    // 发送之前初始化
     ser_data snd_data, rec_data;
-    memcpy(snd_data.data_buf, old_serial_shuffled, SERIAL_SIZE);
-    term_init(usb_fd);
-    snd_data.ser_fd = usb_fd;
-    rec_data.ser_fd = usb_fd;
+    int usb_fd;
+    if (protect_mode == 1) {
+        char *device = "/dev/ttyUSB0";
+        usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+        if (usb_fd < 0) {
+            DEBUG_FMT("%s open failed\r\n", device);
+            sys_close(usb_fd);
+            sys_exit(-1);
+        } else {
+            DEBUG("connection device /dev/ttyUSB2 successful");
+        }
+        reverse_shuffle(old_puf_key, SERIAL_SIZE, swap_infos);
 
-    send(&snd_data);
-    receive(&rec_data);
-    get_serial_key(serial_key, &rec_data);
+        // 发送之前初始化
+        memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
+        term_init(usb_fd);
+        snd_data.ser_fd = usb_fd;
+        rec_data.ser_fd = usb_fd;
+
+        send(&snd_data);
+        receive(&rec_data);
+        get_serial_key(serial_key, &rec_data);
+    } else {
+        memcpy(serial_key, old_puf_key, 16);
+    }
 
     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
      * adjust loader code start and size accordingly */
@@ -869,16 +877,21 @@ void *load(void *entry_stacktop) {
         持久化---begin
         方案：只改变外部加密所用的密钥，外部解密后使用新的密钥进行加密
     */
-    // 与PUF通信获取密钥
-    uint8_t rand[32];
-    get_random_bytes(rand, 32);
-    snd_data_init(&snd_data, rand);
-    snd_data.ser_fd = usb_fd;
-    rec_data.ser_fd = usb_fd;
-    send(&snd_data);
-    receive(&rec_data);
-    sys_close(usb_fd);
-    get_serial_key(serial_key, &rec_data);
+    if (protect_mode == 1) {
+        // 与PUF通信获取密钥
+        uint8_t rand[32];
+        get_random_bytes(rand, 32);
+        snd_data_init(&snd_data, rand);
+        snd_data.ser_fd = usb_fd;
+        rec_data.ser_fd = usb_fd;
+        send(&snd_data);
+        receive(&rec_data);
+        sys_close(usb_fd);
+        // 从PUF通信拿到的数据初始化key
+        get_serial_key(serial_key, &rec_data);
+    } else {
+        get_random_bytes(serial_key, 16);
+    }
 
     // 外部加密
     if (encryption_algorithm == AES) {
@@ -918,6 +931,10 @@ void *load(void *entry_stacktop) {
     sys_write(prog_fd, (char*)sections, sizeof(sections));
     shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
     sys_write(prog_fd, swap_infos, SERIAL_SIZE);
+    if (protect_mode == 0) {
+        memset(snd_data.data_buf, 0, SERIAL_SIZE);
+        memcpy(snd_data.data_buf, serial_key, 16);
+    }
     sys_write(prog_fd, snd_data.data_buf, SERIAL_SIZE);
     sys_write(prog_fd, (char*)mac_array, sizeof(mac_array));
     sys_close(prog_fd);

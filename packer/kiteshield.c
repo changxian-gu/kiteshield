@@ -908,72 +908,82 @@ int main(int argc, char *argv[]) {
     int layer_one_only = 0;
     int c;
     int ret;
+    const char* puf_path;
     input_path = argv[1];
     encryption_algorithm = atoi(argv[2]);
     pub_algorithm = atoi(argv[3]);
     compression_algorithm = atoi(argv[4]);
-    const char* puf_path = argv[6];
-    const char* mac_path = argv[7];
     output_path = argv[5];
+    const char* mac_path = argv[6];
+    int proctect_mode = atoi(argv[7]);
 
-    FILE *file = fopen(puf_path, "r"); // 替换为你的文件名
-    if (file == NULL) {
-        perror("Failed to open file");
-        return EXIT_FAILURE;
-    }
-
-    // 假设每行不超过255个字符
-    char line1[256];
-    char line2[256];
-    char line3[256];
-
-    // 读取第一行
-    if (fgets(line1, sizeof(line1), file) == NULL) {
-        perror("Failed to read line 1");
-        fclose(file);
-        return EXIT_FAILURE;
-    }
-
-    // 读取第二行
-    if (fgets(line2, sizeof(line2), file) == NULL) {
-        perror("Failed to read line 2");
-        fclose(file);
-        return EXIT_FAILURE;
-    }
-
-    // 读取第三行
-    if (fgets(line3, sizeof(line3), file) == NULL) {
-        perror("Failed to read line 3");
-        fclose(file);
-        return EXIT_FAILURE;
-    }
-
-    printf("[STATE] node:1 ; message:PUF交互\n");
-    // 打印读取的内容
-    printf("Line 1: %s", line1);
-    printf("Line 2: %s", line2);
-    printf("Line 3: %s", line3);
-
-    // 关闭文件
-    fclose(file);
-    
     // 创建字节数组
     const int serial_length = 39;
-    printf("[STATE] node:2 ; message:获取密钥\n");
     unsigned char puf_key[serial_length];
+    memset(puf_key, 0, serial_length);
     unsigned char puf_value[serial_length];
+    memset(puf_value, 0, serial_length);
+    if (proctect_mode == 1) {
+        puf_path = argv[8];
 
-    // 转换字符串为字节数组
-    int convertedCount2 = hexStringToByteArray(line2, puf_key, serial_length);
-    int convertedCount3 = hexStringToByteArray(line3, puf_value, serial_length);
+        FILE *file = fopen(puf_path, "r"); // 替换为你的文件名
+        if (file == NULL) {
+            perror("Failed to open file");
+            return EXIT_FAILURE;
+        }
 
-    // 检查转换的结果
-    if (convertedCount2 != serial_length || convertedCount3 != serial_length) {
-        printf("Conversion error\n");
-        return EXIT_FAILURE;
+        // 假设每行不超过255个字符
+        char line1[256];
+        char line2[256];
+        char line3[256];
+
+        // 读取第一行
+        if (fgets(line1, sizeof(line1), file) == NULL) {
+            perror("Failed to read line 1");
+            fclose(file);
+            return EXIT_FAILURE;
+        }
+
+        // 读取第二行
+        if (fgets(line2, sizeof(line2), file) == NULL) {
+            perror("Failed to read line 2");
+            fclose(file);
+            return EXIT_FAILURE;
+        }
+
+        // 读取第三行
+        if (fgets(line3, sizeof(line3), file) == NULL) {
+            perror("Failed to read line 3");
+            fclose(file);
+            return EXIT_FAILURE;
+        }
+
+        printf("[STATE] node:1 ; message:PUF交互\n");
+        // 打印读取的内容
+        printf("Line 1: %s", line1);
+        printf("Line 2: %s", line2);
+        printf("Line 3: %s", line3);
+
+        // 关闭文件
+        fclose(file);
+        
+        printf("[STATE] node:2 ; message:获取密钥\n");
+
+        // 转换字符串为字节数组
+        int convertedCount2 = hexStringToByteArray(line2, puf_key, serial_length);
+        int convertedCount3 = hexStringToByteArray(line3, puf_value, serial_length);
+
+        // 检查转换的结果
+        if (convertedCount2 != serial_length || convertedCount3 != serial_length) {
+            printf("Conversion error\n");
+            return EXIT_FAILURE;
+        }
     }
-
-    memcpy(serial_key, puf_value + 4, 16);
+    // 是否使用PUF
+    if (proctect_mode == 1)
+        memcpy(serial_key, puf_value + 4, 16);
+    else
+        get_random_bytes(serial_key, 16);
     /* Read ELF to be packed */
     info("reading input binary %s", input_path);
     struct mapped_elf elf;
@@ -1093,6 +1103,10 @@ int main(int argc, char *argv[]) {
     // 写入sections, swap_infos, puf_key
     fwrite(sections, sizeof(sections), 1, output_file);
     fwrite(swap_infos, sizeof(swap_infos), 1, output_file);
+    // 如果不使用PUF，把serial_key拷贝到puf_key中
+    if (proctect_mode == 0) {
+        memcpy(puf_key, serial_key, 16);
+    }
     fwrite(puf_key, sizeof(puf_key), 1, output_file);
     fwrite(mac_array, sizeof(mac_array), 1, output_file);
 
