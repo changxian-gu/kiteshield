@@ -7,8 +7,6 @@ debug-antidebug: packer-debug-antidebug
 
 lib-depend:
 	$(MAKE) -C lib_depend_src
-	$(MAKE) -C cyclone_cipher/ecc_demo/ clean
-	$(MAKE) -C cyclone_cipher/ecc_demo/ lib
 
 # The packer requires the headerized loader, thus the loader is a dependency of
 # the packer

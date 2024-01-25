@@ -8,15 +8,11 @@ cmake-build*
 *.swp
 
 # Build artifacts
-packer/obj/
-loader/out/
-loader/test/out/
-testing/out
-packer/kiteshield
-loader/include/obfuscated_strings.h
-hello_world
-hello_world_pak
-
-# Packed binaries
-*.ks
-
+*.o
+*.bin
+loader-elf
+obfuscated_strings.h
+kiteshield
+hello_world*
+loader/out/*
+lib_depend_src/zstd/lib/obj/
