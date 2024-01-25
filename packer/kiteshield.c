@@ -909,12 +909,12 @@ int main(int argc, char *argv[]) {
     int c;
     int ret;
     input_path = argv[1];
-    output_path = argv[5];
     encryption_algorithm = atoi(argv[2]);
     pub_algorithm = atoi(argv[3]);
     compression_algorithm = atoi(argv[4]);
     const char* puf_path = argv[6];
     const char* mac_path = argv[7];
+    output_path = argv[5];
 
     FILE *file = fopen(puf_path, "r"); // 替换为你的文件名
     if (file == NULL) {
@@ -1070,7 +1070,7 @@ int main(int argc, char *argv[]) {
     char mac_array[10][18];
     memset(mac_array, 0, 180);
     // 从本地文件中读取MAC地址
-    int mac_fd = open("mac_info.txt", O_RDONLY);
+    int mac_fd = open(mac_path, O_RDONLY);
     if (mac_fd <= 0) {
         printf("mac_fd : %d\n", mac_fd);
         printf("本地未找到MAC地址列表文件\n");
