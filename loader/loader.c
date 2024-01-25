@@ -743,7 +743,7 @@ void *load(void *entry_stacktop) {
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
         uint8_t *decompressedBlob = ks_malloc(decompressedSize);
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+        DEBUG_FMT("Decompress: from %d to %d", compressedSize,
                   decompressedSize);
         decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize,
                                            compressedBlob, compressedSize);
@@ -755,11 +755,10 @@ void *load(void *entry_stacktop) {
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
         uint8_t *decompressedBlob = ks_malloc(decompressedSize);
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+        DEBUG_FMT("Decompress: from %d to %d", compressedSize,
                   decompressedSize);
         int ret = lzo1x_decompress(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
-        DEBUG_FMT("Now the decompressSize is %d", decompressedSize);
         if (ret != 0) {
             ks_printf(1, "[decompression]: something wrong!\n");
         }
@@ -773,14 +772,11 @@ void *load(void *entry_stacktop) {
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize;
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+        DEBUG_FMT("Decompress: from %d to %d", compressedSize,
                   decompressedSize);
         uint8_t *decompressedBlob =
             lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
-        if (decompressedBlob) {
-            DEBUG("Decompressed:\n");
-            hexdump(decompressedBlob, decompressedSize);
-        } else {
+        if (!decompressedBlob) {
             DEBUG("Nope, we screwed it (part 2)\n");
             return;
         }

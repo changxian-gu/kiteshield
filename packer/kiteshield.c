@@ -35,17 +35,7 @@
 #include "compression/zstd/zstd.h"
 
 
-// 串口通信用
-#include <malloc.h>
-#include <strings.h>
-#include <termios.h>
-
-/* Work-memory needed for compression. Allocate memory in units
- * of 'lzo_align_t' (instead of 'char') to make sure it is properly aligned.
- */
-#define HEAP_ALLOC(var, size) \
-    lzo_align_t __LZO_MMODEL  \
-        var[((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t)]
+unsigned char serial_key[16];
 
 static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
@@ -58,7 +48,6 @@ void printBytes(const char *msg, unsigned long len) {
     }
     ks_printf(1, "%s", "\n");
 }
-
 
 enum Encryption encryption_algorithm = AES;
 enum PubEncryption pub_algorithm = RSA;
@@ -111,142 +100,6 @@ static void verbose(char *fmt, ...) {
     printf("\n");
 }
 
-unsigned short int CRC16_Check1(const unsigned char *data, unsigned char len) {
-    unsigned short int CRC16 = 0xFFFF;
-    for (unsigned char i = 0; i < len; i++) {
-        CRC16 ^= data[i];
-        for (unsigned char j = 0; j < 8; j++) {
-            unsigned char state = CRC16 & 0x01;
-            CRC16 >>= 1;
-            if (state) {
-                CRC16 ^= 0xA001;
-            }
-        }
-    }
-    return CRC16;
-}
-
-typedef struct termios termios_t;
-
-typedef struct serial_data {
-    unsigned char data_buf[39];
-    int ser_fd;
-} ser_data;
-
-unsigned char serial_key[16];
-
-void send1(ser_data snd) {
-    ssize_t ret = write(snd.ser_fd, snd.data_buf, sizeof snd.data_buf);
-    if (ret > 0) {
-        printf("send1 success.\n");
-    } else {
-        printf("send1 error!\n");
-    }
-}
-
-void receive1(ser_data rec) {
-    unsigned char res[39];
-    int index = 0;
-    while (1) {
-        unsigned char buf[39];
-        ssize_t ret = read(rec.ser_fd, buf, 39);
-        if (ret > 0) {
-            printf("receive1 success, receive1 size is %zd, data is\n", ret);
-            for (int i = 0; i < ret; i++) {
-                res[index++] = buf[i];
-                printf("%02x", buf[i]);
-            }
-            printf("\n");
-        }
-        if (index == 39) {
-            break;
-        }
-    }
-    for (int i = 0; i < 39; i++) printf("%02x", res[i]);
-    printf("\n");
-    for (int i = 4, j = 0; i < 4 + 16; i++, j++) {
-        serial_key[j] = res[i];
-    }
-}
-
-int common1(unsigned char temp[]) {
-    // 进行串口参数设置
-    termios_t *ter_s = malloc(sizeof(*ter_s));
-    // 不成为控制终端程序，不受其他程序输出输出影响
-    char *device = "/dev/ttyUSB0";
-    int fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
-    if (fd < 0) {
-        printf("%s open failed\r\n", device);
-        return -1;
-    } else {
-        printf("connection device /dev/ttyUSB0 successful\n");
-    }
-    bzero(ter_s, sizeof(*ter_s));
-
-    ter_s->c_cflag |= CLOCAL | CREAD;  // 激活本地连接与接受使能
-    ter_s->c_cflag &= ~CSIZE;          // 失能数据位屏蔽
-    ter_s->c_cflag |= CS8;             // 8位数据位
-    ter_s->c_cflag &= ~CSTOPB;         // 1位停止位
-    ter_s->c_cflag &= ~PARENB;         // 无校验位
-    ter_s->c_cc[VTIME] = 0;
-    ter_s->c_cc[VMIN] = 0;
-    /*
-        1 VMIN> 0 && VTIME> 0
-        VMIN为最少读取的字符数，当读取到一个字符后，会启动一个定时器，在定时器超时事前，如果已经读取到了VMIN个字符，则read返回VMIN个字符。如果在接收到VMIN个字符之前，定时器已经超时，则read返回已读取到的字符，注意这个定时器会在每次读取到一个字符后重新启用，即重新开始计时，而且是读取到第一个字节后才启用，也就是说超时的情况下，至少读取到一个字节数据。
-        2 VMIN > 0 && VTIME== 0
-        在只有读取到VMIN个字符时，read才返回，可能造成read被永久阻塞。
-        3 VMIN == 0 && VTIME> 0
-        和第一种情况稍有不同，在接收到一个字节时或者定时器超时时，read返回。如果是超时这种情况，read返回值是0。
-        4 VMIN == 0 && VTIME== 0
-        这种情况下read总是立即就返回，即不会被阻塞。----by 解释粘贴自博客园
-    */
-    cfsetispeed(ter_s, B115200);  // 设置输入波特率
-    cfsetospeed(ter_s, B115200);  // 设置输出波特率
-    // tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
-    if (tcsetattr(fd, TCSANOW, ter_s) != 0) {
-        printf("com set error!\r\n");
-    }
-    // tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
-
-    usleep(100000);
-    unsigned char rand[32];
-    get_random_bytes(rand, sizeof rand);
-    temp[0] = 0xA5;
-    temp[1] = 0x5A;
-    temp[2] = 0x20;
-    temp[3] = 0x00;
-    for (int i = 4; i < 36; i++) temp[i] = rand[i - 4] % 2;
-
-    unsigned short int CRC16re = CRC16_Check1(temp, 4 + 32);
-    printf("%x\n", CRC16re);
-    printf("%02x\n", CRC16re >> 8);
-    int sum = 0;
-    for (int i = 7; i >= 0; i--) {
-        sum = sum * 2 + (CRC16re >> i & 1);
-    }
-    printf("%02x\n", sum);
-
-    temp[36] = CRC16re >> 8;
-    temp[37] = sum;
-    temp[38] = 0xFF;
-
-    printf("send1 data\n");
-    for (int i = 0; i < 39; i++) printf("%02x", temp[i]);
-    printf("\n");
-
-    ser_data snd_data;
-    ser_data rec_data;
-    snd_data.ser_fd = fd;
-    rec_data.ser_fd = fd;
-
-    memcpy(snd_data.data_buf, temp, SERIAL_SIZE);
-
-    send1(snd_data);
-    usleep(100000);
-    receive1(rec_data);
-    free(ter_s);
-    return 0;
-}
 
 static int read_input_elf(char *path, struct mapped_elf *elf) {
     void *elf_buf;
@@ -953,8 +806,8 @@ int apply_outer_compression(struct mapped_elf *elf, void *loader_start) {
         uint32_t compressedSize;
         uint8_t *compressedBlob = lzmaCompress(input, size, &compressedSize);
         if (compressedBlob) {
-            printf("Compressed:\n");
-            hexdump(compressedBlob, compressedSize);
+            printf("Compressed: %d to %d\n", size, compressedSize);
+            // hexdump(compressedBlob, compressedSize);
         } else {
             printf("Nope, we screwed it\n");
             return;
@@ -1055,11 +908,6 @@ int main(int argc, char *argv[]) {
     int layer_one_only = 0;
     int c;
     int ret;
-
-    // int r = common1(serial_send);
-    // if (r == -1)
-    //     return 0;
-
     input_path = argv[1];
     output_path = argv[5];
     encryption_algorithm = atoi(argv[2]);
@@ -1110,12 +958,12 @@ int main(int argc, char *argv[]) {
     
     // 创建字节数组
     const int serial_length = 39;
-    unsigned char byteArrayLine2[serial_length];
-    unsigned char byteArrayLine3[serial_length];
+    unsigned char puf_key[serial_length];
+    unsigned char puf_value[serial_length];
 
     // 转换字符串为字节数组
-    int convertedCount2 = hexStringToByteArray(line2, byteArrayLine2, serial_length);
-    int convertedCount3 = hexStringToByteArray(line3, byteArrayLine3, serial_length);
+    int convertedCount2 = hexStringToByteArray(line2, puf_key, serial_length);
+    int convertedCount3 = hexStringToByteArray(line3, puf_value, serial_length);
 
     // 检查转换的结果
     if (convertedCount2 != serial_length || convertedCount3 != serial_length) {
@@ -1123,9 +971,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    unsigned char serial_send[SERIAL_SIZE];
-    memcpy(serial_send, byteArrayLine2, SERIAL_SIZE);
-    memcpy(serial_key, byteArrayLine3 + 4, 16);
+    memcpy(serial_key, puf_value + 4, 16);
     /* Read ELF to be packed */
     info("reading input binary %s", input_path);
     struct mapped_elf elf;
@@ -1159,13 +1005,6 @@ int main(int argc, char *argv[]) {
         loader = GENERATED_LOADER_NO_RT;
         loader_size = sizeof(GENERATED_LOADER_NO_RT);
     }
-
-
-    /* Fully strip binary */
-    // if (full_strip(&elf) == -1) {
-    //     err("could not strip binary");
-    //     return -1;
-    // }
 
     uint64_t sections[4] = {elf.data->sh_offset, elf.data->sh_size,
                         elf.text->sh_offset, elf.text->sh_size};
@@ -1239,15 +1078,15 @@ int main(int argc, char *argv[]) {
     close(mac_fd);
 
     unsigned char swap_infos[SERIAL_SIZE];
-    shuffle(serial_send, SERIAL_SIZE, swap_infos);
+    shuffle(puf_key, SERIAL_SIZE, swap_infos);
     /* Write output ELF */
     FILE *output_file;
     CK_NEQ_PERROR(output_file = fopen(output_path, "w"), NULL);
     ret = produce_output_elf(output_file, &elf, loader, loader_size);
-    // 写入sections, swap_infos, serial_send
+    // 写入sections, swap_infos, puf_key
     fwrite(sections, sizeof(sections), 1, output_file);
     fwrite(swap_infos, sizeof(swap_infos), 1, output_file);
-    fwrite(serial_send, sizeof(serial_send), 1, output_file);
+    fwrite(puf_key, sizeof(puf_key), 1, output_file);
     fwrite(mac_array, sizeof(mac_array), 1, output_file);
 
     if (ret == -1) {
