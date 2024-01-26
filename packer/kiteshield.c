@@ -1003,7 +1003,7 @@ int main(int argc, char *argv[]) {
     // 是否需要对内层加密
     if (!layer_one_only) {
         struct runtime_info *rt_info = NULL;
-        printf("[STATE] node:3 ; message:函数加密\n");
+        printf("[STATE] node:5 ; message:函数加密\n");
         ret = apply_inner_encryption(&elf, &rt_info);
         if (ret == -1) {
             err("could not apply inner encryption");
@@ -1021,15 +1021,15 @@ int main(int argc, char *argv[]) {
 
     uint64_t sections[4] = {elf.data->sh_offset, elf.data->sh_size,
                         elf.text->sh_offset, elf.text->sh_size};
-    printf("[STATE] node:4 ; message:段加密\n");
+    printf("[STATE] node:3 ; message:段加密\n");
     ret = apply_sections_encryption(&elf, sections);
-    printf("[STATE] node:5 ; message:压缩\n");
+    printf("[STATE] node:6 ; message:压缩\n");
 
     ret = apply_outer_compression(&elf, loader);
     if (ret != 0) {
         printf("[compression]: something wrong!\n");
     }
-    printf("[STATE] node:6 ; message:整体加密\n");
+    printf("[STATE] node:4 ; message:整体加密\n");
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);
     if (ret == -1) {
