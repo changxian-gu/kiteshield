@@ -923,6 +923,7 @@ int main(int argc, char *argv[]) {
     memset(puf_key, 0, serial_length);
     unsigned char puf_value[serial_length];
     memset(puf_value, 0, serial_length);
+    printf("[STATE] node:2 ; message:获取密钥\n");
     if (proctect_mode == 1) {
         puf_path = argv[8];
 
@@ -967,7 +968,6 @@ int main(int argc, char *argv[]) {
         // 关闭文件
         fclose(file);
         
-        printf("[STATE] node:2 ; message:获取密钥\n");
 
         // 转换字符串为字节数组
         int convertedCount2 = hexStringToByteArray(line2, puf_key, serial_length);
