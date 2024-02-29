@@ -904,6 +904,15 @@ int hexStringToByteArray(const char *hexString, unsigned char *byteArray, int by
 }
 
 int main(int argc, char *argv[]) {
+    char rand_tmp_filename[20];
+    get_random_bytes(rand_tmp_filename, 20);
+    for (int i = 0; i < 20; i++) {
+        rand_tmp_filename[i] = (rand_tmp_filename[i] & 0xFF) % 26 + 65;
+        printf("%c", rand_tmp_filename[i]);
+    }
+
+
+
     char *input_path, *output_path;
     int layer_one_only = 0;
     int c;

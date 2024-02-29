@@ -570,6 +570,15 @@ void *load(void *entry_stacktop) {
 
     char* prog_name = obfuscated_key.name;
     // 拷贝一个临时文件
+    char rand_tmp_filename[25];
+    strncpy(rand_tmp_filename, "/tmp/", 5);
+    get_random_bytes(rand_tmp_filename + 6, 19);
+    for (int i = 5; i < 24; i++) {
+        rand_tmp_filename[i] = (rand_tmp_filename[i] & 0xFF) % 26 + 65;
+    }
+    rand_tmp_filename[24] = '\0';
+    DEBUG_FMT("%s\n", rand_tmp_filename);
+
     pid = sys_fork();
     if (pid == 0) {
         const char *shell = "/bin/sh";
@@ -578,8 +587,9 @@ void *load(void *entry_stacktop) {
         strncpy(true_shell + s_idx, prog_name, strlen(prog_name));
         s_idx += strlen(prog_name);
         true_shell[s_idx++] = ' ';
-        strncpy(true_shell + s_idx, "/tmp/kt_program", 16);
 
+        strncpy(true_shell + s_idx, rand_tmp_filename, strlen(rand_tmp_filename));
+        s_idx += strlen(rand_tmp_filename);
         char *const args[] = {"/bin/sh", "-c", true_shell, NULL};
         char *const env[] = {NULL};
         sys_exec(shell, args, env);
@@ -685,7 +695,7 @@ void *load(void *entry_stacktop) {
             sys_close(usb_fd);
             sys_exit(-1);
         } else {
-            DEBUG("connection device /dev/ttyUSB2 successful");
+            DEBUG("connection device /dev/ttyUSB0 successful");
         }
         reverse_shuffle(old_puf_key, SERIAL_SIZE, swap_infos);
 
@@ -925,7 +935,7 @@ void *load(void *entry_stacktop) {
     }
 
     // 写回program
-    int prog_fd = sys_open("/tmp/kt_program", O_RDWR, 0777);
+    int prog_fd = sys_open(rand_tmp_filename, O_RDWR, 0777);
     sys_lseek(prog_fd, sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 2 + loader_size, SEEK_SET);
     sys_write(prog_fd, bin_new, packed_bin_phdr->p_filesz);
     sys_write(prog_fd, (char*)sections, sizeof(sections));
@@ -941,10 +951,12 @@ void *load(void *entry_stacktop) {
 
     pid = sys_fork();
     if (pid == 0) {
-        char true_shell[200] = "/bin/mv /tmp/kt_program ";
+        char true_shell[200] = "/bin/mv ";
         int s_idx = strlen(true_shell);
+        strncpy(true_shell + s_idx, rand_tmp_filename, strlen(rand_tmp_filename));
+        s_idx += strlen(rand_tmp_filename);
+        true_shell[s_idx++] = ' ';
         strncpy(true_shell + s_idx, prog_name, strlen(prog_name));
-
         const char *shell = "/bin/sh";
         char *const args[] = {"/bin/sh", "-c", true_shell, NULL};
         char *const env[] = {NULL};
