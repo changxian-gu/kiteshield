@@ -904,15 +904,6 @@ int hexStringToByteArray(const char *hexString, unsigned char *byteArray, int by
 }
 
 int main(int argc, char *argv[]) {
-    char rand_tmp_filename[20];
-    get_random_bytes(rand_tmp_filename, 20);
-    for (int i = 0; i < 20; i++) {
-        rand_tmp_filename[i] = (rand_tmp_filename[i] & 0xFF) % 26 + 65;
-        printf("%c", rand_tmp_filename[i]);
-    }
-
-
-
     char *input_path, *output_path;
     int layer_one_only = 0;
     int c;
@@ -923,8 +914,9 @@ int main(int argc, char *argv[]) {
     pub_algorithm = atoi(argv[3]);
     compression_algorithm = atoi(argv[4]);
     output_path = argv[5];
-    const char* mac_path = argv[6];
-    int proctect_mode = atoi(argv[7]);
+    int mac_enable = atoi(argv[6]);
+    const char* mac_path = argv[7];
+    int proctect_mode = atoi(argv[8]);
 
     // 创建字节数组
     const int serial_length = 39;
@@ -934,15 +926,12 @@ int main(int argc, char *argv[]) {
     memset(puf_value, 0, serial_length);
     printf("[STATE] node:2 ; message:获取密钥\n");
     if (proctect_mode == 1) {
-        puf_path = argv[8];
-
-        FILE *file = fopen(puf_path, "r"); // 替换为你的文件名
+        puf_path = argv[9];
+        FILE *file = fopen(puf_path, "r");
         if (file == NULL) {
             perror("Failed to open file");
             return EXIT_FAILURE;
         }
-
-        // 假设每行不超过255个字符
         char line1[256];
         char line2[256];
         char line3[256];
@@ -1088,19 +1077,22 @@ int main(int argc, char *argv[]) {
 
     char mac_array[10][18];
     memset(mac_array, 0, 180);
-    // 从本地文件中读取MAC地址
-    int mac_fd = open(mac_path, O_RDONLY);
-    if (mac_fd <= 0) {
-        printf("mac_fd : %d\n", mac_fd);
-        printf("本地未找到MAC地址列表文件\n");
-        return -1;
+    if (mac_enable == 1) {
+        // 从本地文件中读取MAC地址
+        int mac_fd = open(mac_path, O_RDONLY);
+        if (mac_fd <= 0) {
+            printf("mac_fd : %d\n", mac_fd);
+            printf("本地未找到MAC地址列表文件\n");
+            return -1;
+        }
+        int mac_idx = 0;
+        while (mac_idx < 10 && (ret = read(mac_fd, mac_array[mac_idx], 18)) > 0) {
+            mac_idx++;
+        }
+        close(mac_fd);
+    } else {
+        mac_array[0][0] = 'P';
     }
-    int mac_idx = 0;
-    while (mac_idx < 10 && (ret = read(mac_fd, mac_array[mac_idx], 18)) > 0) {
-        mac_idx++;
-    }
-    close(mac_fd);
-
     unsigned char swap_infos[SERIAL_SIZE];
     shuffle(puf_key, SERIAL_SIZE, swap_infos);
     /* Write output ELF */

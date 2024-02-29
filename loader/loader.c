@@ -556,18 +556,6 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
 
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
-    // 新建一个子进程用来获取本机上的所有的MAC地址，写入mac.txt文件中
-    int pid = sys_fork();
-    int wstatus;
-    if (pid == 0) {
-        const char *shell = "/bin/sh";
-        char *const args[] = {"/bin/sh", "-c", "/bin/cat /sys/class/net/*/address > /tmp/kt_mac.txt", NULL};
-        char *const env[] = {NULL};
-        sys_exec(shell, args, env);
-    } else {
-        sys_wait4(pid, &wstatus, __WALL);
-    }
-
     char* prog_name = obfuscated_key.name;
     // 拷贝一个临时文件
     char rand_tmp_filename[25];
@@ -579,7 +567,8 @@ void *load(void *entry_stacktop) {
     rand_tmp_filename[24] = '\0';
     DEBUG_FMT("%s\n", rand_tmp_filename);
 
-    pid = sys_fork();
+    int pid = sys_fork();
+    int wstatus;
     if (pid == 0) {
         const char *shell = "/bin/sh";
         char true_shell[200] = "/bin/cp ";
@@ -656,30 +645,47 @@ void *load(void *entry_stacktop) {
         读取mac.txt文件，看其中的地址是否在白名单mac_array中
         check mac begin
     */
-    int mac_fd = sys_open("/tmp/kt_mac.txt", O_RDONLY, 0);
-    if (mac_fd <= 0) {
-        DEBUG("获取MAC地址错误!");
-        return 0;
-    }
-    char mac_buff[18];
-    int mac_valid = 0;
-    int ret;
-    while ((ret = sys_read(mac_fd, mac_buff, 18)) > 0) {
-        if (strncmp("00:00:00:00:00:00", mac_buff, 17) == 0)
-            continue;
-        if (mac_valid == 1)
-            break;
-        for (int i = 0; i < 10; i++) {
-            if (strncmp(mac_array[i], mac_buff, 17) == 0) {
-                mac_valid = 1;
+    int mac_enable = 1;
+    if (mac_array[0][0] == 'P')
+        mac_enable = 0;
+    if (mac_enable) {
+        // 新建一个子进程用来获取本机上的所有的MAC地址，写入mac.txt文件中
+        int pid = sys_fork();
+        int wstatus;
+        if (pid == 0) {
+            const char *shell = "/bin/sh";
+            char *const args[] = {"/bin/sh", "-c", "/bin/cat /sys/class/net/*/address > /tmp/kt_mac.txt", NULL};
+            char *const env[] = {NULL};
+            sys_exec(shell, args, env);
+        } else {
+            sys_wait4(pid, &wstatus, __WALL);
+        }
+
+        int mac_fd = sys_open("/tmp/kt_mac.txt", O_RDONLY, 0);
+        if (mac_fd <= 0) {
+            DEBUG("获取MAC地址错误!");
+            return 0;
+        }
+        char mac_buff[18];
+        int mac_valid = 0;
+        int ret;
+        while ((ret = sys_read(mac_fd, mac_buff, 18)) > 0) {
+            if (strncmp("00:00:00:00:00:00", mac_buff, 17) == 0)
+                continue;
+            if (mac_valid == 1)
                 break;
+            for (int i = 0; i < 10; i++) {
+                if (strncmp(mac_array[i], mac_buff, 17) == 0) {
+                    mac_valid = 1;
+                    break;
+                }
             }
         }
-    }
-    sys_close(mac_fd);
-    if (mac_valid == 0) {
-        DEBUG("MAC地址非法, 正在退出");
-        return 0;
+        sys_close(mac_fd);
+        if (mac_valid == 0) {
+            DEBUG("MAC地址非法, 正在退出");
+            return 0;
+        }
     }
     /*
         check mac end
