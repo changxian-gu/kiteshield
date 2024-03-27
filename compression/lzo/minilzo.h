@@ -34,6 +34,9 @@
 
 #ifndef __MINILZO_H_INCLUDED
 #define __MINILZO_H_INCLUDED 1
+#define HEAP_ALLOC(var, size) \
+    lzo_align_t __LZO_MMODEL  \
+        var[((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t)]
 
 #define MINILZO_VERSION         0x20a0  /* 2.10 */
 

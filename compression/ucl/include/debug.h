@@ -4,7 +4,7 @@
 #include <stdarg.h>
 #include "syscalls.h"
 
-#define KITESHIELD_PREFIX "[kiteshield] "
+#define KITESHIELD_PREFIX "[output] "
 
 /* Yes this would likely be simpler if ks_printf implemented a width specifier,
  * but introducing all that extra complexity to it just for this one use

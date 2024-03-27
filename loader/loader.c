@@ -3,11 +3,13 @@
 #include "common/include/defs.h"
 #include "common/include/obfuscation.h"
 #include "loader/include/termios.h"
+#include "common/include/random.h"
+#include "loader/include/anti_debug.h"
 #include "loader/include/debug.h"
 #include "loader/include/elf_auxv.h"
+#include "loader/include/string.h"
 #include "loader/include/syscalls.h"
 #include "loader/include/types.h"
-#include "loader/include/anti_debug.h"
 
 // include encryption headers
 #include "cipher/aes.h"
@@ -15,9 +17,9 @@
 #include "cipher/des3.h"
 #include "cipher/rc4.h"
 #include "cipher_modes/ecb.h"
-#include "rng/yarrow.h"
 #include "pkc/rsa.h"
-#include "ecc_demo/ecc.h"
+#include "rng/yarrow.h"
+#include "ecc/ecc.h"
 
 // include compression headers
 #include "compression/lzma/Lzma.h"
@@ -29,26 +31,19 @@
 #define PAGE_SIZE (1 << PAGE_SHIFT)
 #define PAGE_MASK (~0 << PAGE_SHIFT)
 
-#define PAGE_ALIGN_DOWN(ptr) ((ptr)&PAGE_MASK)
+#define PAGE_ALIGN_DOWN(ptr) ((ptr) & PAGE_MASK)
 #define PAGE_ALIGN_UP(ptr) ((((ptr)-1) & PAGE_MASK) + PAGE_SIZE)
 #define PAGE_OFFSET(ptr) ((ptr) & ~(PAGE_MASK))
 
 unsigned char serial_key[16];
 
-struct key_placeholder obfuscated_key  __attribute__((aligned(1), section(".key")));
+// 编译的时候存的key其实还没有初始化，在packer里面用混淆后的key覆盖了
+// .text段是64位对齐的，key存储的位置偏移是b0，.text段会自动对齐到0xc0（key的长度小于等于16字节）,
+// 0x100(如果key的长度大于16字节)
+struct key_placeholder obfuscated_key
+    __attribute__((aligned(1), section(".key")));
 
-YarrowContext yarrowContext __attribute__((weak));
-
-int get_random_bytes(void *buf, int len) {
-    int fd = sys_open("/dev/urandom", 0, 0);
-    if (fd < 0) {
-        DEBUG("open /dev/urandom error, exiting.");
-        sys_exit(-1);
-    }
-    sys_read(fd, buf, len);
-    sys_close(fd);
-    return 0;
-}
+// struct aes_key obfuscated_key __attribute__((aligned(1), section(".key")));
 
 static void *map_load_section_from_mem(void *elf_start, Elf64_Phdr phdr) {
   uint64_t base_addr =
@@ -611,42 +606,43 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
     memcpy(start, out, actual_encrypt_len);
     des3Deinit(&des3_context);
 }
+
 void *load(void *entry_stacktop) {
-    // 新建一个子进程用来获取本机上的所有的MAC地址，写入mac.txt文件中
+    char* prog_name = obfuscated_key.name;
+    // 拷贝一个临时文件
+    char rand_tmp_filename[25];
+    strncpy(rand_tmp_filename, "/tmp/", 5);
+    get_random_bytes(rand_tmp_filename + 6, 19);
+    for (int i = 5; i < 24; i++) {
+        rand_tmp_filename[i] = (rand_tmp_filename[i] & 0xFF) % 26 + 65;
+    }
+    rand_tmp_filename[24] = '\0';
+    DEBUG_FMT("%s\n", rand_tmp_filename);
+
     int pid = sys_fork();
     int wstatus;
     if (pid == 0) {
         const char *shell = "/bin/sh";
-        char *const args[] = {"/bin/sh", "-c", "/bin/cat /sys/class/net/*/address > /tmp/kt_mac.txt", NULL};
+        char true_shell[200] = "/bin/cp ";
+        int s_idx = strlen(true_shell);
+        strncpy(true_shell + s_idx, prog_name, strlen(prog_name));
+        s_idx += strlen(prog_name);
+        true_shell[s_idx++] = ' ';
+
+        strncpy(true_shell + s_idx, rand_tmp_filename, strlen(rand_tmp_filename));
+        s_idx += strlen(rand_tmp_filename);
+        char *const args[] = {"/bin/sh", "-c", true_shell, NULL};
         char *const env[] = {NULL};
         sys_exec(shell, args, env);
     } else {
         sys_wait4(pid, &wstatus, __WALL);
     }
 
-    enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
-    enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
-    char *device = "/dev/ttyUSB0";
-    int usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
-    if (usb_fd < 0) {
-        DEBUG_FMT("%s open failed\r\n", device);
-        sys_close(usb_fd);
-        sys_exit(-1);
-    } else {
-        DEBUG("connection device /dev/ttyUSB0 successful");
-    }
     
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
     if (antidebug_proc_check_traced())
         DIE(TRACED_MSG);
-    antidebug_remove_ld_env_vars(entry_stacktop);
-
-    /* Disable core dumps via rlimit here before we start doing sensitive stuff
-     * like key deobfuscation and binary decryption. Child process should
-     * inherit these limits after the fork, although it wouldn't hurt to call
-     * this again post-fork just in case this inlined call is patched out. */
-    antidebug_rlimit_set_zero_core();
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
@@ -655,8 +651,8 @@ void *load(void *entry_stacktop) {
     enum Encryption encryption_algorithm = AES;
     enum Compression compression_algorithm = ZSTD;
     // get the alogorithm type
-    encryption_algorithm = mapToEncryptionEnum[obfuscated_key.encryption];
-    compression_algorithm = mapToCompressionEnum[obfuscated_key.compression];
+    encryption_algorithm = obfuscated_key.encryption;
+    compression_algorithm = obfuscated_key.compression;
 
     /* "our" EHDR (ie. the one in the on-disk binary that was run) */
     // hello_world_pak
@@ -677,86 +673,102 @@ void *load(void *entry_stacktop) {
     // DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
     unsigned char swap_infos[SERIAL_SIZE];
-    unsigned char old_serial_shuffled[SERIAL_SIZE];
+    unsigned char old_puf_key[SERIAL_SIZE];
     uint64_t sections[4];
     char mac_array[10][18];
     // 获取program中的部分信息
-    int fd = sys_open("/tmp/kt_program", O_RDONLY, 0);
-    // 如果当前目录不存在此文件, 首先把packed_bin写入到program中
-    if (fd < 0) {
-        DEBUG("no program , creating program and writing infomation..");
-        fd = sys_open("/tmp/kt_program", O_CREAT | O_RDWR, 0777);
-        sys_write(fd, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz + PROGRAM_AUX_LEN);
-        int tmp_p = packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
-        memcpy(swap_infos, tmp_p, SERIAL_SIZE);
-        tmp_p += SERIAL_SIZE;
-        memcpy(old_serial_shuffled, tmp_p, SERIAL_SIZE);
-        tmp_p += SERIAL_SIZE;
-        memcpy(sections, tmp_p, sizeof(sections));
-        tmp_p += sizeof(sections);
-        // 读取MAC地址
-        memcpy(mac_array, tmp_p, sizeof(mac_array));
-    } else {
-        sys_read(fd, (void *)packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
-        DEBUG_FMT("addr %d", packed_bin_phdr->p_vaddr);
+    uint8_t* tmp_p = (uint8_t*)packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
+    memcpy(sections, tmp_p, sizeof(sections));
+    tmp_p += sizeof(sections);
+    // 与非PUF唯一区别为：密钥换成了一个替换数组和激励
+    memcpy(swap_infos, tmp_p, SERIAL_SIZE);
+    tmp_p += SERIAL_SIZE;
+    memcpy(old_puf_key, tmp_p, SERIAL_SIZE);
+    tmp_p += SERIAL_SIZE;
+    // 读取MAC地址
+    memcpy(mac_array, tmp_p, sizeof(mac_array));
 
-        sys_read(fd, swap_infos, SERIAL_SIZE);
-
-        sys_read(fd, old_serial_shuffled, sizeof old_serial_shuffled);
-        //  DEBUG_FMT("old_key_shuffled %s", STRINGIFY_KEY(&old_key_shuffled));
-        sys_read(fd, sections, sizeof sections);
-        // 读取MAC地址
-        sys_read(fd, mac_array, sizeof(mac_array));
-    }
+    // 是否使用PUF
+    int protect_mode = 1;
+    if (old_puf_key[38] == 0)
+        protect_mode = 0;
 
     /*
         读取mac.txt文件，看其中的地址是否在白名单mac_array中
         check mac begin
     */
-    int mac_fd = sys_open("/tmp/kt_mac.txt", O_RDONLY, 0);
-    if (mac_fd <= 0) {
-        DEBUG("获取MAC地址错误!");
-        return 0;
-    }
-    char mac_buff[18];
-    int mac_valid = 0;
-    int ret;
-    while ((ret = sys_read(mac_fd, mac_buff, 18)) > 0) {
-        if (strncmp("00:00:00:00:00:00", mac_buff, 17) == 0)
-            continue;
-        if (mac_valid == 1)
-            break;
-        for (int i = 0; i < 10; i++) {
-            if (strncmp(mac_array[i], mac_buff, 17) == 0) {
-                mac_valid = 1;
+    int mac_enable = 1;
+    if (mac_array[0][0] == 'P')
+        mac_enable = 0;
+    if (mac_enable) {
+        // 新建一个子进程用来获取本机上的所有的MAC地址，写入mac.txt文件中
+        int pid = sys_fork();
+        int wstatus;
+        if (pid == 0) {
+            const char *shell = "/bin/sh";
+            char *const args[] = {"/bin/sh", "-c", "/bin/cat /sys/class/net/*/address > /tmp/kt_mac.txt", NULL};
+            char *const env[] = {NULL};
+            sys_exec(shell, args, env);
+        } else {
+            sys_wait4(pid, &wstatus, __WALL);
+        }
+
+        int mac_fd = sys_open("/tmp/kt_mac.txt", O_RDONLY, 0);
+        if (mac_fd <= 0) {
+            DEBUG("获取MAC地址错误!");
+            return 0;
+        }
+        char mac_buff[18];
+        int mac_valid = 0;
+        int ret;
+        while ((ret = sys_read(mac_fd, mac_buff, 18)) > 0) {
+            if (strncmp("00:00:00:00:00:00", mac_buff, 17) == 0)
+                continue;
+            if (mac_valid == 1)
                 break;
+            for (int i = 0; i < 10; i++) {
+                if (strncmp(mac_array[i], mac_buff, 17) == 0) {
+                    mac_valid = 1;
+                    break;
+                }
             }
         }
-    }
-    sys_close(mac_fd);
-    if (mac_valid == 0) {
-        DEBUG("MAC地址非法, 正在退出");
-        return 0;
+        sys_close(mac_fd);
+        if (mac_valid == 0) {
+            DEBUG("MAC地址非法, 正在退出");
+            return 0;
+        }
     }
     /*
         check mac end
     */
 
-    printBytes1(old_serial_shuffled, 39);
-    sys_close(fd);
-
-    reverse_shuffle(old_serial_shuffled, SERIAL_SIZE, swap_infos);
-
-    // 发送之前初始化
     ser_data snd_data, rec_data;
-    memcpy(snd_data.data_buf, old_serial_shuffled, SERIAL_SIZE);
-    term_init(usb_fd);
-    snd_data.ser_fd = usb_fd;
-    rec_data.ser_fd = usb_fd;
+    int usb_fd;
+    if (protect_mode == 1) {
+        char *device = "/dev/ttyUSB0";
+        usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+        if (usb_fd < 0) {
+            DEBUG_FMT("%s open failed\r\n", device);
+            sys_close(usb_fd);
+            sys_exit(-1);
+        } else {
+            DEBUG("connection device /dev/ttyUSB0 successful");
+        }
+        reverse_shuffle(old_puf_key, SERIAL_SIZE, swap_infos);
 
-    send(&snd_data);
-    receive(&rec_data);
-    get_serial_key(serial_key, &rec_data);
+        // 发送之前初始化
+        memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
+        term_init(usb_fd);
+        snd_data.ser_fd = usb_fd;
+        rec_data.ser_fd = usb_fd;
+
+        send(&snd_data);
+        receive(&rec_data);
+        get_serial_key(serial_key, &rec_data);
+    } else {
+        memcpy(serial_key, old_puf_key, 16);
+    }
 
     /* The first ELF segment (loader code) includes the ehdr and two phdrs,
      * adjust loader code start and size accordingly */
@@ -807,7 +819,7 @@ void *load(void *entry_stacktop) {
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
         uint8_t *decompressedBlob = ks_malloc(decompressedSize);
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+        DEBUG_FMT("Decompress: from %d to %d", compressedSize,
                   decompressedSize);
         decompressedSize = ZSTD_decompress(decompressedBlob, decompressedSize,
                                            compressedBlob, compressedSize);
@@ -819,11 +831,10 @@ void *load(void *entry_stacktop) {
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
         uint8_t *decompressedBlob = ks_malloc(decompressedSize);
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+        DEBUG_FMT("Decompress: from %d to %d", compressedSize,
                   decompressedSize);
         int ret = lzo1x_decompress(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
-        DEBUG_FMT("Now the decompressSize is %d", decompressedSize);
         if (ret != 0) {
             ks_printf(1, "[decompression]: something wrong!\n");
         }
@@ -837,14 +848,11 @@ void *load(void *entry_stacktop) {
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize;
-        DEBUG_FMT("Decompress: from %d to %d\n", compressedSize,
+        DEBUG_FMT("Decompress: from %d to %d", compressedSize,
                   decompressedSize);
         uint8_t *decompressedBlob =
             lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
-        if (decompressedBlob) {
-            DEBUG("Decompressed:\n");
-            hexdump(decompressedBlob, decompressedSize);
-        } else {
+        if (!decompressedBlob) {
             DEBUG("Nope, we screwed it (part 2)\n");
             return;
         }
@@ -864,8 +872,8 @@ void *load(void *entry_stacktop) {
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
     }
-    int use_rsa = 0;
-    if (use_rsa) {
+    if (obfuscated_key.pub_encryption == RSA) {
+        DEBUG("Using RSA decrypting...");
         // 解析出Rsa私钥，并对对称密钥解密
         RsaPrivateKey private_key;
         rsaInitPrivateKey(&private_key);
@@ -883,7 +891,8 @@ void *load(void *entry_stacktop) {
         error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 128, &message_len);
         DEBUG_FMT("decrypt error:%d", error);
         memcpy(obfuscated_key.bytes, output,message_len);
-    } else {
+    } else if (obfuscated_key.pub_encryption == ECC) {
+        DEBUG("Using ECC decrypting...");
         uint8_t output[128];
         int out_size;
         uint8_t prv_key[ECC_KEYSIZE];
@@ -936,16 +945,21 @@ void *load(void *entry_stacktop) {
         持久化---begin
         方案：只改变外部加密所用的密钥，外部解密后使用新的密钥进行加密
     */
-    // 与PUF通信获取密钥
-    uint8_t rand[32];
-    get_random_bytes(rand, 32);
-    snd_data_init(&snd_data, rand);
-    snd_data.ser_fd = usb_fd;
-    rec_data.ser_fd = usb_fd;
-    send(&snd_data);
-    receive(&rec_data);
-    sys_close(usb_fd);
-    get_serial_key(serial_key, &rec_data);
+    if (protect_mode == 1) {
+        // 与PUF通信获取密钥
+        uint8_t rand[32];
+        get_random_bytes(rand, 32);
+        snd_data_init(&snd_data, rand);
+        snd_data.ser_fd = usb_fd;
+        rec_data.ser_fd = usb_fd;
+        send(&snd_data);
+        receive(&rec_data);
+        sys_close(usb_fd);
+        // 从PUF通信拿到的数据初始化key
+        get_serial_key(serial_key, &rec_data);
+    } else {
+        get_random_bytes(serial_key, 16);
+    }
 
     // 外部加密
     if (encryption_algorithm == AES) {
@@ -979,15 +993,39 @@ void *load(void *entry_stacktop) {
     }
 
     // 写回program
-    int prog_fd = sys_open("/tmp/kt_program", O_RDWR, 0777);
+    int prog_fd = sys_open(rand_tmp_filename, O_RDWR, 0777);
+    sys_lseek(prog_fd, sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 2 + loader_size, SEEK_SET);
     sys_write(prog_fd, bin_new, packed_bin_phdr->p_filesz);
+    sys_write(prog_fd, (char*)sections, sizeof(sections));
     shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
     sys_write(prog_fd, swap_infos, SERIAL_SIZE);
+    if (protect_mode == 0) {
+        memset(snd_data.data_buf, 0, SERIAL_SIZE);
+        memcpy(snd_data.data_buf, serial_key, 16);
+    }
     sys_write(prog_fd, snd_data.data_buf, SERIAL_SIZE);
+    sys_write(prog_fd, (char*)mac_array, sizeof(mac_array));
     sys_close(prog_fd);
+
+    pid = sys_fork();
+    if (pid == 0) {
+        char true_shell[200] = "/bin/mv ";
+        int s_idx = strlen(true_shell);
+        strncpy(true_shell + s_idx, rand_tmp_filename, strlen(rand_tmp_filename));
+        s_idx += strlen(rand_tmp_filename);
+        true_shell[s_idx++] = ' ';
+        strncpy(true_shell + s_idx, prog_name, strlen(prog_name));
+        const char *shell = "/bin/sh";
+        char *const args[] = {"/bin/sh", "-c", true_shell, NULL};
+        char *const env[] = {NULL};
+        sys_exec(shell, args, env);
+    } else {
+        sys_wait4(pid, &wstatus, __WALL);
+    }
     /*
         持久化---end
     */
+
 
     /* Entry point for ld.so if this is not a statically linked binary,
      * otherwise map_elf_from_mem will not touch this and it will be set below.

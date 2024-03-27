@@ -292,6 +292,12 @@ enum rlimit_resource {
 #define STATX__RESERVED                                                        \
   0x80000000U /* Reserved for future struct statx expansion */
 
+struct timespec
+{
+  long int tv_sec;		/* Seconds.  */
+  long int tv_nsec;  /* Nanoseconds.  */
+};
+
 /* syscall wrapper prototypes */
 ssize_t sys_write(int fd, const char *s, size_t count);
 
@@ -340,5 +346,6 @@ int sys_setrlimit(int resource, struct rlimit *rlim);
 
 int sys_exec(const char *path, char *const argv[], char *const envp[]);
 
+int sleep(unsigned int seconds);
 
 #endif /* __KITESHIELD_SYSCALLS_H */

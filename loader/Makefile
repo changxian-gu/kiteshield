@@ -2,11 +2,11 @@
 CFLAGS_COMMON = -std=gnu99 -fno-pie -nostdlib -nostartfiles -nodefaultlibs -fno-builtin -c -I .. -I../cyclone_cipher -I../cyclone_cipher/common -I../compression/lzma -I../compression/lzo -I../compression/ucl \
 				-I../compression/ucl/include -I../compression/ucl/src
 LDFLAGS = -no-pie 
-LIB = -L../cyclone_cipher -lcrypto -lecc -L../compression/ucl/ -lucl
+LIB = -L../cyclone_cipher -lcrypto -lecc
 
 CFLAGS = $(CFLAGS_COMMON)
 
-SRCS = $(wildcard *.[c,S] ../common/*.c ../compression/zstd/zstddeclib.c ../compression/lzma/*.c ../compression/lzo/*.c)
+SRCS = $(wildcard *.[c,S] ../common/*.c ../compression/zstd/zstddeclib.c ../compression/lzma/*.c ../compression/lzo/*.c ../compression/ucl/src/*.c)
 OBJS_RT = $(addprefix out/rt/, $(addsuffix .o, $(basename $(notdir $(SRCS:.c=.o)))))
 OBJS_NO_RT = $(addprefix out/no_rt/, $(addsuffix .o, $(basename $(notdir $(SRCS:.c=.o)))))
 

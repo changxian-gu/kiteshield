@@ -5,6 +5,9 @@ all: packer
 debug: packer-debug
 debug-antidebug: packer-debug-antidebug
 
+lib-depend:
+	$(MAKE) -C lib_depend_src
+
 # The packer requires the headerized loader, thus the loader is a dependency of
 # the packer
 packer: loader

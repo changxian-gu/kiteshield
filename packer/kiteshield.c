@@ -1,22 +1,23 @@
-#include <stdio.h>
-#include <time.h>
 #include <elf.h>
-#include <fcntl.h>
-#include <string.h>
-#include <stdarg.h>
-#include <stdlib.h>
-#include <sys/stat.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <stdarg.h>
 #include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
+#include <termios.h>
 
 #include "common/include/defs.h"
 #include "common/include/inner_rc4.h"
 #include "common/include/obfuscation.h"
-#include "loader/out/generated_loader_rt.h"
+#include "common/include/random.h"
 #include "loader/out/generated_loader_no_rt.h"
+#include "loader/out/generated_loader_rt.h"
 #include "packer/include/elfutils.h"
-
 
 // include encryption headers
 #include "cipher/aes.h"
@@ -24,63 +25,51 @@
 #include "cipher/des3.h"
 #include "cipher/rc4.h"
 #include "cipher_modes/ecb.h"
-#include "rng/yarrow.h"
 #include "pkc/rsa.h"
-#include "ecc_demo/ecc.h"
+#include "rng/yarrow.h"
+#include "ecc/ecc.h"
 // include compression headers
 #include "compression/lzma/Lzma.h"
-#include "compression/zstd/zstd.h"
 #include "compression/lzo/minilzo.h"
 #include "compression/ucl/include/ucl.h"
+#include "compression/zstd/zstd.h"
 
-//串口通信
-#include <termios.h>
-#include <malloc.h>
 
-extern size_t strlen(const char *s);
-
-YarrowContext yarrowContext;
-
-int get_random_bytes_kt(void *buf, int len) {
-    int fd = open("/dev/urandom", 0, 0);
-    read(fd, buf, len);
-    close(fd);
-    return 0;
-}
-
-void printBytes(const char* msg, unsigned long len) {
-    for (int i = 0; i < len; i++) {
-        printf( "0x%02x(", (unsigned char)(msg[i]));
-        printf( "%d) ", (unsigned char)(msg[i]));
-    }
-    printf( "%s", "\n");
-}
-
-#define HEAP_ALLOC(var,size) \
-    lzo_align_t __LZO_MMODEL var [ ((size) + (sizeof(lzo_align_t) - 1)) / sizeof(lzo_align_t) ]
+unsigned char serial_key[16];
 
 static HEAP_ALLOC(wrkmem, LZO1X_1_MEM_COMPRESS);
 
+YarrowContext yarrowContext;
+
+void printBytes(const char *msg, unsigned long len) {
+    for (int i = 0; i < len; i++) {
+        ks_printf(1, "0x%x(", (unsigned char)(msg[i]));
+        ks_printf(1, "%d) ", (unsigned char)(msg[i]));
+    }
+    ks_printf(1, "%s", "\n");
+}
+
 enum Encryption encryption_algorithm = AES;
+enum PubEncryption pub_algorithm = RSA;
 enum Compression compression_algorithm = ZSTD;
 
 /* Convenience macro for error checking libc calls */
-#define CK_NEQ_PERROR(stmt, err)                                               \
-  do {                                                                         \
-    if ((stmt) == err) {                                                       \
-      perror(#stmt);                                                           \
-      return -1;                                                               \
-    }                                                                          \
-  } while (0)
+#define CK_NEQ_PERROR(stmt, err) \
+    do {                         \
+        if ((stmt) == err) {     \
+            perror(#stmt);       \
+            return -1;           \
+        }                        \
+    } while (0)
 
-#define STRINGIFY_KEY(key)                                                     \
-  ({                                                                           \
-    char buf[(sizeof(key.bytes) * 2) + 1];                                     \
-    for (int i = 0; i < sizeof(key.bytes); i++) {                              \
-      sprintf(&buf[i * 2], "%02hhx", key.bytes[i]);                            \
-    };                                                                         \
-    buf;                                                                       \
-  })
+#define STRINGIFY_KEY(key)                                \
+    ({                                                    \
+        char buf[(sizeof(key.bytes) * 2) + 1];            \
+        for (int i = 0; i < sizeof(key.bytes); i++) {     \
+            sprintf(&buf[i * 2], "%02hhx", key.bytes[i]); \
+        };                                                \
+        buf;                                              \
+    })
 
 static int log_verbose = 0;
 
@@ -93,22 +82,22 @@ static void err(char *fmt, ...) {
 }
 
 static void info(char *fmt, ...) {
-  va_list args;
-  va_start(args, fmt);
+    va_list args;
+    va_start(args, fmt);
 
-  vprintf(fmt, args);
-  printf("\n");
+    vprintf(fmt, args);
+    printf("\n");
 }
 
 static void verbose(char *fmt, ...) {
-  if (!log_verbose)
-    return;
+    if (!log_verbose)
+        return;
 
-  va_list args;
-  va_start(args, fmt);
+    va_list args;
+    va_start(args, fmt);
 
-  vprintf(fmt, args);
-  printf("\n");
+    vprintf(fmt, args);
+    printf("\n");
 }
 
 unsigned short int CRC16_Check1(const unsigned char *data, unsigned char len) {
@@ -134,119 +123,6 @@ typedef struct serial_data {
 } ser_data;
 
 unsigned char serial_key[16];
-
-void send1(ser_data snd) {
-    ssize_t ret = write(snd.ser_fd, snd.data_buf, sizeof snd.data_buf);
-    if (ret > 0) {
-        printf("send1 success.\n");
-    } else {
-        printf("send1 error!\n");
-    }
-}
-
-void receive1(ser_data rec) {
-    unsigned char res[39];
-    int index = 0;
-    while (1) {
-        unsigned char buf[39];
-        ssize_t ret = read(rec.ser_fd, buf, 39);
-        if (ret > 0) {
-            printf("receive1 success, receive1 size is %zd, data is\n", ret);
-            for (int i = 0; i < ret; i++) {
-                res[index++] = buf[i];
-                printf("%02x", buf[i]);
-            }
-            printf("\n");
-        }
-        if (index == 39) {
-            break;
-        }
-    }
-    for (int i = 0; i < 39; i++) printf("%02x", res[i]);
-    printf("\n");
-    for (int i = 4, j = 0; i < 4 + 16; i++, j++) {
-        serial_key[j] = res[i];
-    }
-}
-
-int common1(unsigned char temp[]) {
-    // 进行串口参数设置
-    termios_t *ter_s = malloc(sizeof(*ter_s));
-    // 不成为控制终端程序，不受其他程序输出输出影响
-    char *device = "/dev/ttyUSB0";
-    int fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
-    if (fd < 0) {
-        printf("%s open failed\r\n", device);
-        return -1;
-    } else {
-        printf("connection device /dev/ttyUSB0 successful\n");
-    }
-    bzero(ter_s, sizeof(*ter_s));
-
-    ter_s->c_cflag |= CLOCAL | CREAD;  // 激活本地连接与接受使能
-    ter_s->c_cflag &= ~CSIZE;          // 失能数据位屏蔽
-    ter_s->c_cflag |= CS8;             // 8位数据位
-    ter_s->c_cflag &= ~CSTOPB;         // 1位停止位
-    ter_s->c_cflag &= ~PARENB;         // 无校验位
-    ter_s->c_cc[VTIME] = 0;
-    ter_s->c_cc[VMIN] = 0;
-    /*
-        1 VMIN> 0 && VTIME> 0
-        VMIN为最少读取的字符数，当读取到一个字符后，会启动一个定时器，在定时器超时事前，如果已经读取到了VMIN个字符，则read返回VMIN个字符。如果在接收到VMIN个字符之前，定时器已经超时，则read返回已读取到的字符，注意这个定时器会在每次读取到一个字符后重新启用，即重新开始计时，而且是读取到第一个字节后才启用，也就是说超时的情况下，至少读取到一个字节数据。
-        2 VMIN > 0 && VTIME== 0
-        在只有读取到VMIN个字符时，read才返回，可能造成read被永久阻塞。
-        3 VMIN == 0 && VTIME> 0
-        和第一种情况稍有不同，在接收到一个字节时或者定时器超时时，read返回。如果是超时这种情况，read返回值是0。
-        4 VMIN == 0 && VTIME== 0
-        这种情况下read总是立即就返回，即不会被阻塞。----by 解释粘贴自博客园
-    */
-    cfsetispeed(ter_s, B115200);  // 设置输入波特率
-    cfsetospeed(ter_s, B115200);  // 设置输出波特率
-    tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
-    if (tcsetattr(fd, TCSANOW, ter_s) != 0) {
-        printf("com set error!\r\n");
-    }
-    tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
-
-    unsigned char rand[32];
-    get_random_bytes_kt(rand, sizeof rand);
-    temp[0] = 0xA5;
-    temp[1] = 0x5A;
-    temp[2] = 0x20;
-    temp[3] = 0x00;
-    for (int i = 4; i < 36; i++) temp[i] = rand[i - 4] % 2;
-
-    unsigned short int CRC16re = CRC16_Check1(temp, 4 + 32);
-    printf("%x\n", CRC16re);
-    printf("%02x\n", CRC16re >> 8);
-    int sum = 0;
-    for (int i = 7; i >= 0; i--) {
-        sum = sum * 2 + (CRC16re >> i & 1);
-    }
-    printf("%02x\n", sum);
-
-    temp[36] = CRC16re >> 8;
-    temp[37] = sum;
-    temp[38] = 0xFF;
-
-    printf("send1 data\n");
-    for (int i = 0; i < 39; i++) printf("%02x", temp[i]);
-    printf("\n");
-
-    ser_data snd_data;
-    ser_data rec_data;
-    snd_data.ser_fd = fd;
-    rec_data.ser_fd = fd;
-
-    memcpy(snd_data.data_buf, temp, SERIAL_SIZE);
-
-    send1(snd_data);
-    send1(snd_data);
-    send1(snd_data);
-    receive1(rec_data);
-    free(ter_s);
-    return 0;
-}
 
 static int read_input_elf(char *path, struct mapped_elf *elf) {
   void *elf_buf;
@@ -469,7 +345,7 @@ static int process_func(struct mapped_elf *elf, Elf64_Sym *func_sym,
   fcn->id = rt_info->nfuncs;
   fcn->start_addr = base_addr + func_sym->st_value;
   fcn->len = func_sym->st_size;
-  CK_NEQ_PERROR(get_random_bytes_kt(fcn->key.bytes, sizeof(fcn->key.bytes)), -1);
+  CK_NEQ_PERROR(get_random_bytes(fcn->key.bytes, sizeof(fcn->key.bytes)), -1);
 #ifdef DEBUG_OUTPUT
   strncpy(fcn->name, elf_get_sym_name(elf, func_sym), sizeof(fcn->name));
   fcn->name[sizeof(fcn->name) - 1] = '\0';
@@ -912,7 +788,7 @@ int hexToDec(char c) {
 
 void shuffle(unsigned char *arr, int n, unsigned char swap_infos[]) {
     unsigned char index[n];
-    get_random_bytes_kt(index, n);
+    get_random_bytes(index, n);
 
     // 洗牌算法
     for (int i = n - 1; i >= 0; i--) {
@@ -933,32 +809,98 @@ void reverse_shuffle(unsigned char *arr, int n,
     }
 }
 
+int hexStringToByteArray(const char *hexString, unsigned char *byteArray, int byteArraySize) {
+    int count = 0;
+    const char *pos = hexString;
+
+    // 转换16进制字符串为字节数组
+    while (count < byteArraySize && sscanf(pos, "%2hhx", &byteArray[count]) == 1) {
+        pos += 2;
+        count++;
+    }
+
+    return count; // 返回转换的字节数
+}
+
 int main(int argc, char *argv[]) {
-    enum Encryption mapToEncryptionEnum[] = {[1] RC4, [2] DES, [3] TDEA, [4] AES};
-    enum Compression mapToCompressionEnum[] = {[1] LZMA, [2] LZO, [3] UCL, [4] ZSTD};
     char *input_path, *output_path;
     int layer_one_only = 0;
     int c;
     int ret;
-
-    unsigned char serial_send[SERIAL_SIZE];
-    int r = common1(serial_send);
-    if (r == -1)
-        return 0;
-
-    for (int i = 0; i < argc; i++) {
-        printf("argv[%d] : %s\n", i, argv[i]);
-    }
-    // if (argc != 7) {
-    //     printf("[ERROR]: 接收参数错误！\n");
-    //     return -1;
-    // }
+    const char* puf_path;
     input_path = argv[1];
-    output_path = argv[4];
-    printf("DEBUG: argv[2] : %d\n", atoi(argv[2]));
-    encryption_algorithm = mapToEncryptionEnum[atoi(argv[2])];
-    compression_algorithm = mapToCompressionEnum[atoi(argv[3])];
+    encryption_algorithm = atoi(argv[2]);
+    pub_algorithm = atoi(argv[3]);
+    compression_algorithm = atoi(argv[4]);
+    output_path = argv[5];
+    int mac_enable = atoi(argv[6]);
+    const char* mac_path = argv[7];
+    int proctect_mode = atoi(argv[8]);
 
+    // 创建字节数组
+    const int serial_length = 39;
+    unsigned char puf_key[serial_length];
+    memset(puf_key, 0, serial_length);
+    unsigned char puf_value[serial_length];
+    memset(puf_value, 0, serial_length);
+    printf("[STATE] node:2 ; message:获取密钥\n");
+    if (proctect_mode == 1) {
+        puf_path = argv[9];
+        FILE *file = fopen(puf_path, "r");
+        if (file == NULL) {
+            perror("Failed to open file");
+            return EXIT_FAILURE;
+        }
+        char line1[256];
+        char line2[256];
+        char line3[256];
+
+        // 读取第一行
+        if (fgets(line1, sizeof(line1), file) == NULL) {
+            perror("Failed to read line 1");
+            fclose(file);
+            return EXIT_FAILURE;
+        }
+
+        // 读取第二行
+        if (fgets(line2, sizeof(line2), file) == NULL) {
+            perror("Failed to read line 2");
+            fclose(file);
+            return EXIT_FAILURE;
+        }
+
+        // 读取第三行
+        if (fgets(line3, sizeof(line3), file) == NULL) {
+            perror("Failed to read line 3");
+            fclose(file);
+            return EXIT_FAILURE;
+        }
+
+        printf("[STATE] node:1 ; message:PUF交互\n");
+        // 打印读取的内容
+        printf("Line 1: %s", line1);
+        printf("Line 2: %s", line2);
+        printf("Line 3: %s", line3);
+
+        // 关闭文件
+        fclose(file);
+        
+
+        // 转换字符串为字节数组
+        int convertedCount2 = hexStringToByteArray(line2, puf_key, serial_length);
+        int convertedCount3 = hexStringToByteArray(line3, puf_value, serial_length);
+
+        // 检查转换的结果
+        if (convertedCount2 != serial_length || convertedCount3 != serial_length) {
+            printf("Conversion error\n");
+            return EXIT_FAILURE;
+        }
+    }
+    // 是否使用PUF
+    if (proctect_mode == 1)
+        memcpy(serial_key, puf_value + 4, 16);
+    else
+        get_random_bytes(serial_key, 16);
     /* Read ELF to be packed */
     info("reading input binary %s", input_path);
     struct mapped_elf elf;
@@ -978,6 +920,7 @@ int main(int argc, char *argv[]) {
     // 是否需要对内层加密
     if (!layer_one_only) {
         struct runtime_info *rt_info = NULL;
+        printf("[STATE] node:5 ; message:函数加密\n");
         ret = apply_inner_encryption(&elf, &rt_info);
         if (ret == -1) {
             err("could not apply inner encryption");
@@ -993,22 +936,17 @@ int main(int argc, char *argv[]) {
         loader_size = sizeof(GENERATED_LOADER_NO_RT);
     }
 
-
-    /* Fully strip binary */
-    // if (full_strip(&elf) == -1) {
-    //     err("could not strip binary");
-    //     return -1;
-    // }
-
-    uint64_t rand[4] = {elf.data->sh_offset, elf.data->sh_size,
+    uint64_t sections[4] = {elf.data->sh_offset, elf.data->sh_size,
                         elf.text->sh_offset, elf.text->sh_size};
-    ret = apply_sections_encryption(&elf, rand);
+    printf("[STATE] node:3 ; message:段加密\n");
+    ret = apply_sections_encryption(&elf, sections);
+    printf("[STATE] node:6 ; message:压缩\n");
 
     ret = apply_outer_compression(&elf, loader);
     if (ret != 0) {
         printf("[compression]: something wrong!\n");
     }
-
+    printf("[STATE] node:4 ; message:整体加密\n");
     /* Apply outer encryption */
     ret = apply_outer_encryption(&elf, loader, loader_size);
     if (ret == -1) {
@@ -1016,8 +954,8 @@ int main(int argc, char *argv[]) {
         return -1;
     }
 
-    int use_rsa = 0;
-    if (use_rsa) {
+    if (pub_algorithm == RSA) {
+        printf("Using RSA encrypting...\n");
         struct key_placeholder place_holder = *((struct key_placeholder *)loader);
         uint8_t seed[32];
         yarrowInit(&yarrowContext);
@@ -1029,15 +967,16 @@ int main(int argc, char *argv[]) {
         rsaInitPrivateKey(&privateKey);
         rsaGenerateKeyPair(&yarrowPrngAlgo, &yarrowContext, 1024, 65537, &privateKey, &publicKey);
         rsaPrivateKeyFormat(&privateKey, place_holder.my_rsa_key, &place_holder.rsa_key_args_len);
-        printBytes(place_holder.bytes, 128);
         // 用Rsa加密对称密钥
         char cipher[128];
         int cipher_len;
         int t = rsaesPkcs1v15Encrypt(&yarrowPrngAlgo, &yarrowContext, &publicKey, 
                             place_holder.bytes, 117, cipher, &cipher_len); 
         memcpy(place_holder.bytes, cipher, 128);
+        place_holder.pub_encryption = RSA;
         memcpy(loader, &place_holder, sizeof(struct key_placeholder));
-    } else {
+    } else if (pub_algorithm == ECC) {
+        printf("Using ECC encrypting...\n");
         struct key_placeholder place_holder = *((struct key_placeholder *)loader);
         uint8_t pub_key[ECC_KEYSIZE];
         uint8_t prv_key[ECC_KEYSIZE];
@@ -1047,36 +986,49 @@ int main(int argc, char *argv[]) {
         ecc_encrypt(pub_key, place_holder.bytes, 128, cipher, &out_size);
         memcpy(place_holder.bytes, cipher, 128);
         memcpy(place_holder.my_ecc_key, prv_key, ECC_KEYSIZE);
+        place_holder.pub_encryption = ECC;
         memcpy(loader, &place_holder, sizeof(struct key_placeholder));
     }
 
+    struct key_placeholder place_holder = *((struct key_placeholder *)loader);
+    strcpy(place_holder.name, argv[5]);
+    memcpy(loader, &place_holder, sizeof(struct key_placeholder));
+
     char mac_array[10][18];
     memset(mac_array, 0, 180);
-    // 从本地文件中读取MAC地址
-    int mac_fd = open("mac_address.txt", O_RDONLY);
-    if (mac_fd <= 0) {
-        printf("mac_fd : %d\n", mac_fd);
-        printf("本地未找到MAC地址列表文件\n");
-        return -1;
+    if (mac_enable == 1) {
+        // 从本地文件中读取MAC地址
+        int mac_fd = open(mac_path, O_RDONLY);
+        if (mac_fd <= 0) {
+            printf("mac_fd : %d\n", mac_fd);
+            printf("本地未找到MAC地址列表文件\n");
+            return -1;
+        }
+        int mac_idx = 0;
+        while (mac_idx < 10 && (ret = read(mac_fd, mac_array[mac_idx], 18)) > 0) {
+            mac_idx++;
+        }
+        close(mac_fd);
+    } else {
+        mac_array[0][0] = 'P';
     }
-    int mac_idx = 0;
-    while (mac_idx < 10 && (ret = read(mac_fd, mac_array[mac_idx], 18)) > 0) {
-        mac_idx++;
-    }
-    close(mac_fd);
-
     unsigned char swap_infos[SERIAL_SIZE];
-    shuffle(serial_send, SERIAL_SIZE, swap_infos);
+    shuffle(puf_key, SERIAL_SIZE, swap_infos);
     /* Write output ELF */
     FILE *output_file;
     CK_NEQ_PERROR(output_file = fopen(output_path, "w"), NULL);
+    printf("[STATE] node:7 ; message:加壳\n");
+
     ret = produce_output_elf(output_file, &elf, loader, loader_size);
-    // 写入swap_infos, serial_send, rand
+    // 写入sections, swap_infos, puf_key
+    fwrite(sections, sizeof(sections), 1, output_file);
     fwrite(swap_infos, sizeof(swap_infos), 1, output_file);
-    fwrite(serial_send, sizeof(serial_send), 1, output_file);
-    fwrite(rand, sizeof(rand), 1, output_file);
+    // 如果不使用PUF，把serial_key拷贝到puf_key中
+    if (proctect_mode == 0) {
+        memcpy(puf_key, serial_key, 16);
+    }
+    fwrite(puf_key, sizeof(puf_key), 1, output_file);
     fwrite(mac_array, sizeof(mac_array), 1, output_file);
-    printBytes(serial_send, 39);
 
     if (ret == -1) {
         err("could not produce output ELF");
@@ -1089,6 +1041,7 @@ int main(int argc, char *argv[]) {
         -1);
 
     info("output ELF has been written to %s", output_path);
+    printf("[STATE] node:8 ; message:成功\n");
     ks_malloc_deinit();
     return 0;
 }

@@ -1,8 +1,22 @@
-#include "loader/include/termios.h"
+#include "./include/termios.h"
 
 int my_tcflush(int fd, int queue_selector)
 {
     return sys_ioctl(fd, TCFLSH, queue_selector);
+}
+
+int my_tcgetattr(int fd, struct termios *term)
+{
+    struct termios tmp;
+    int ret;
+
+    ret = sys_ioctl(fd, TCGETS, &tmp);
+    if (ret < 0)
+        return ret;
+
+    *term = tmp;
+
+    return 0;
 }
 
 int my_tcsetattr(int fd, int optional_actions, const struct termios *term)
@@ -43,6 +57,7 @@ void send(ser_data* snd) {
     } else {
         DEBUG("send error!");
     }
+    sleep(1);
 }
 
 void get_serial_key(uint8_t* serial_key, ser_data* rec_data) {
@@ -62,22 +77,27 @@ void receive(ser_data* rec) {
     }
 }
 
-void term_init(int fd) {
-    // 进行串口参数设置
-    termios_t term;
-    term.c_cflag |= CLOCAL | CREAD;  // 激活本地连接与接受使能
-    term.c_cflag &= ~CSIZE;          // 失能数据位屏蔽
-    term.c_cflag |= CS8;             // 8位数据位
-    term.c_cflag &= ~CSTOPB;         // 1位停止位
-    term.c_cflag &= ~PARENB;         // 无校验位
-    term.c_cc[VTIME] = 0;
-    term.c_cc[VMIN] = 0;
-    term.c_ispeed = B115200;
-    term.c_ospeed = B115200;
-    my_tcflush(fd, TCIFLUSH);        // 刷清未处理的输入和/或输出
-    if (my_tcsetattr(fd, TCSANOW, &term) != 0) {
-        DEBUG("com set error!");
+int term_init(int fd) {
+    struct termios tty;
+    if (my_tcgetattr (fd, &tty) != 0) {
+        return -1;
     }
+    tty.c_ispeed = B115200;
+    tty.c_ospeed = B115200;
+    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;     // 8-bit chars
+    tty.c_lflag = 0;                // no signaling chars, no echo,
+    tty.c_oflag = 0;                // no remapping, no delays
+    tty.c_cc[VMIN]  = 0;            // read doesn't block
+    tty.c_cc[VTIME] = 0;            // no timeout
+    tty.c_cflag &= ~PARENB;
+    tty.c_cflag |= (CLOCAL | CREAD);// ignore modem controls,
+    tty.c_cflag &= ~CSTOPB;         // 1位停止位
+
+    if (my_tcsetattr (fd, TCSANOW, &tty) != 0){
+        return -1;
+    }
+    sleep(1);
+    return 0;
 }
 
 int common(ser_data* snd_data, ser_data* rec_data) {
