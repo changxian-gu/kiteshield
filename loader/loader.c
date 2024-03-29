@@ -606,7 +606,6 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
     memcpy(start, out, actual_encrypt_len);
     des3Deinit(&des3_context);
 }
-
 void *load(void *entry_stacktop) {
     char* prog_name = obfuscated_key.name;
     // 拷贝一个临时文件
@@ -640,6 +639,9 @@ void *load(void *entry_stacktop) {
 
     
     ks_malloc_init();
+    // 反调试功能, 具体怎么反调试的?
+    if (antidebug_proc_check_traced())
+        DIE(TRACED_MSG);
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
@@ -669,15 +671,14 @@ void *load(void *entry_stacktop) {
     packed_bin_phdr->p_filesz -= PROGRAM_AUX_LEN;
     // DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
-    unsigned char swap_infos[SERIAL_SIZE];
-    unsigned char old_puf_key[SERIAL_SIZE];
-    uint64_t sections[4];
-    char mac_array[10][18];
+    unsigned char swap_infos[SERIAL_SIZE] = {0};
+    unsigned char old_puf_key[SERIAL_SIZE] = {0};
+    uint64_t sections[4] = {0};
+    char mac_array[10][18] = {0};
     // 获取program中的部分信息
     uint8_t* tmp_p = (uint8_t*)packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
     memcpy(sections, tmp_p, sizeof(sections));
     tmp_p += sizeof(sections);
-    // 与非PUF唯一区别为：密钥换成了一个替换数组和激励
     memcpy(swap_infos, tmp_p, SERIAL_SIZE);
     tmp_p += SERIAL_SIZE;
     memcpy(old_puf_key, tmp_p, SERIAL_SIZE);
@@ -689,7 +690,6 @@ void *load(void *entry_stacktop) {
     int protect_mode = 1;
     reverse_shuffle(old_puf_key, 39, swap_infos);
     if (old_puf_key[38] == 0) {
-        DEBUG("fuck you!!!!!!!!!!!!");
         protect_mode = 0;
     }
 
@@ -750,6 +750,7 @@ void *load(void *entry_stacktop) {
         usb_fd = open_serial_port(device);
         // 发送之前初始化
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
+        term_init(usb_fd);
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
 
@@ -826,8 +827,7 @@ void *load(void *entry_stacktop) {
         int ret = lzo1x_decompress(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
         if (ret != 0) {
-            DEBUG("[decompression]: something wrong!");
-            return 0;
+            ks_printf(1, "[decompression]: something wrong!\n");
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
@@ -845,7 +845,7 @@ void *load(void *entry_stacktop) {
             lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
         if (!decompressedBlob) {
             DEBUG("Nope, we screwed it (part 2)\n");
-            return 0;
+            return;
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
@@ -988,12 +988,13 @@ void *load(void *entry_stacktop) {
     sys_lseek(prog_fd, sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 2 + loader_size, SEEK_SET);
     sys_write(prog_fd, bin_new, packed_bin_phdr->p_filesz);
     sys_write(prog_fd, (char*)sections, sizeof(sections));
-    shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
-    sys_write(prog_fd, swap_infos, SERIAL_SIZE);
+
     if (protect_mode == 0) {
         memset(snd_data.data_buf, 0, SERIAL_SIZE);
         memcpy(snd_data.data_buf, serial_key, 16);
     }
+    shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
+    sys_write(prog_fd, swap_infos, SERIAL_SIZE);
     sys_write(prog_fd, snd_data.data_buf, SERIAL_SIZE);
     sys_write(prog_fd, (char*)mac_array, sizeof(mac_array));
     sys_close(prog_fd);

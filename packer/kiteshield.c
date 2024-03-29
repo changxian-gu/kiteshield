@@ -821,7 +821,6 @@ int hexStringToByteArray(const char *hexString, unsigned char *byteArray, int by
 
     return count; // 返回转换的字节数
 }
-
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
     int layer_one_only = 0;
@@ -1013,6 +1012,10 @@ int main(int argc, char *argv[]) {
         mac_array[0][0] = 'P';
     }
     unsigned char swap_infos[SERIAL_SIZE];
+    // 如果不使用PUF，把serial_key拷贝到puf_key
+    if (proctect_mode == 0) {
+        memcpy(puf_key, serial_key, 16);
+    }
     shuffle(puf_key, SERIAL_SIZE, swap_infos);
     /* Write output ELF */
     FILE *output_file;
@@ -1023,12 +1026,7 @@ int main(int argc, char *argv[]) {
     // 写入sections, swap_infos, puf_key
     fwrite(sections, sizeof(sections), 1, output_file);
     fwrite(swap_infos, sizeof(swap_infos), 1, output_file);
-    // 如果不使用PUF，把serial_key拷贝到puf_key中
-    if (proctect_mode == 0) {
-        memcpy(puf_key, serial_key, 16);
-    }
     fwrite(puf_key, sizeof(puf_key), 1, output_file);
-    printf("the 38th is %02x\n", puf_key[38]);
     fwrite(mac_array, sizeof(mac_array), 1, output_file);
 
     if (ret == -1) {
