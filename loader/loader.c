@@ -620,15 +620,15 @@ void *load(void *entry_stacktop) {
     packed_bin_phdr->p_filesz -= PROGRAM_AUX_LEN;
     // DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
-    unsigned char swap_infos[SERIAL_SIZE];
-    unsigned char old_puf_key[SERIAL_SIZE];
-    uint64_t sections[4];
-    char mac_array[10][18];
+    unsigned char swap_infos[SERIAL_SIZE] = {0};
+    unsigned char old_puf_key[SERIAL_SIZE] = {0};
+    printBytes1(old_puf_key, 39);
+    uint64_t sections[4] = {0};
+    char mac_array[10][18] = {0};
     // 获取program中的部分信息
     uint8_t* tmp_p = (uint8_t*)packed_bin_phdr->p_vaddr + packed_bin_phdr->p_filesz;
     memcpy(sections, tmp_p, sizeof(sections));
     tmp_p += sizeof(sections);
-    // 与非PUF唯一区别为：密钥换成了一个替换数组和激励
     memcpy(swap_infos, tmp_p, SERIAL_SIZE);
     tmp_p += SERIAL_SIZE;
     memcpy(old_puf_key, tmp_p, SERIAL_SIZE);
@@ -638,8 +638,12 @@ void *load(void *entry_stacktop) {
 
     // 是否使用PUF
     int protect_mode = 1;
-    if (old_puf_key[38] == 0)
+    printBytes1(old_puf_key, 39);
+    reverse_shuffle(old_puf_key, 39, swap_infos);
+    printBytes1(old_puf_key, 39);
+    if (old_puf_key[38] == 0) {
         protect_mode = 0;
+    }
 
     /*
         读取mac.txt文件，看其中的地址是否在白名单mac_array中
@@ -695,16 +699,7 @@ void *load(void *entry_stacktop) {
     int usb_fd;
     if (protect_mode == 1) {
         char *device = "/dev/ttyUSB0";
-        usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
-        if (usb_fd < 0) {
-            DEBUG_FMT("%s open failed\r\n", device);
-            sys_close(usb_fd);
-            sys_exit(-1);
-        } else {
-            DEBUG("connection device /dev/ttyUSB0 successful");
-        }
-        reverse_shuffle(old_puf_key, SERIAL_SIZE, swap_infos);
-
+        usb_fd = open_serial_port(device);
         // 发送之前初始化
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
         term_init(usb_fd);
@@ -945,12 +940,13 @@ void *load(void *entry_stacktop) {
     sys_lseek(prog_fd, sizeof(Elf64_Ehdr) + sizeof(Elf64_Phdr) * 2 + loader_size, SEEK_SET);
     sys_write(prog_fd, bin_new, packed_bin_phdr->p_filesz);
     sys_write(prog_fd, (char*)sections, sizeof(sections));
-    shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
-    sys_write(prog_fd, swap_infos, SERIAL_SIZE);
+
     if (protect_mode == 0) {
         memset(snd_data.data_buf, 0, SERIAL_SIZE);
         memcpy(snd_data.data_buf, serial_key, 16);
     }
+    shuffle(snd_data.data_buf, SERIAL_SIZE, swap_infos);
+    sys_write(prog_fd, swap_infos, SERIAL_SIZE);
     sys_write(prog_fd, snd_data.data_buf, SERIAL_SIZE);
     sys_write(prog_fd, (char*)mac_array, sizeof(mac_array));
     sys_close(prog_fd);
