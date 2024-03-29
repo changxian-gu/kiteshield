@@ -41,6 +41,22 @@
 #define PARODD	0001000
 #define HUPCL	0002000
 #define CLOCAL	0004000
+#define CRTSCTS	  020000000000	/* flow control */
+
+
+/* c_oflag bits */
+#define OPOST	0000001
+
+/* c_lflag bits */
+#define ISIG	0000001   /* Enable signals.  */
+#define ICANON	0000002   /* Canonical input (erase and kill processing).  */
+#define ECHO	0000010   /* Enable echo.  */
+#define ECHOE	0000020   /* Echo erase character as error-correcting
+			     backspace.  */
+#define ECHOK	0000040   /* Echo KILL.  */
+#define ECHONL	0000100   /* Echo NL.  */
+#define NOFLSH	0000200   /* Disable flush after interrupt or quit.  */
+#define TOSTOP	0000400   /* Send SIGTTOU for background output.  */
 
 
 /* c_cc characters */
@@ -134,9 +150,11 @@ unsigned short int CRC16_Check(const unsigned char *data, unsigned char len);
 
 void send(ser_data* snd);
 
-void receive(ser_data* rec);
+int receive(ser_data* rec);
 
 int term_init(int fd);
+
+int open_serial_port(const char *device);
 
 int common(ser_data* snd_data, ser_data* rec_data);
 

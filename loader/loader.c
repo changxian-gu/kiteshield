@@ -640,9 +640,6 @@ void *load(void *entry_stacktop) {
 
     
     ks_malloc_init();
-    // 反调试功能, 具体怎么反调试的?
-    if (antidebug_proc_check_traced())
-        DIE(TRACED_MSG);
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
@@ -690,8 +687,11 @@ void *load(void *entry_stacktop) {
 
     // 是否使用PUF
     int protect_mode = 1;
-    if (old_puf_key[38] == 0)
+    reverse_shuffle(old_puf_key, 39, swap_infos);
+    if (old_puf_key[38] == 0) {
+        DEBUG("fuck you!!!!!!!!!!!!");
         protect_mode = 0;
+    }
 
     /*
         读取mac.txt文件，看其中的地址是否在白名单mac_array中
@@ -747,19 +747,9 @@ void *load(void *entry_stacktop) {
     int usb_fd;
     if (protect_mode == 1) {
         char *device = "/dev/ttyUSB0";
-        usb_fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
-        if (usb_fd < 0) {
-            DEBUG_FMT("%s open failed\r\n", device);
-            sys_close(usb_fd);
-            sys_exit(-1);
-        } else {
-            DEBUG("connection device /dev/ttyUSB0 successful");
-        }
-        reverse_shuffle(old_puf_key, SERIAL_SIZE, swap_infos);
-
+        usb_fd = open_serial_port(device);
         // 发送之前初始化
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
-        term_init(usb_fd);
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
 
@@ -836,7 +826,8 @@ void *load(void *entry_stacktop) {
         int ret = lzo1x_decompress(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
         if (ret != 0) {
-            ks_printf(1, "[decompression]: something wrong!\n");
+            DEBUG("[decompression]: something wrong!");
+            return 0;
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
@@ -854,7 +845,7 @@ void *load(void *entry_stacktop) {
             lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
         if (!decompressedBlob) {
             DEBUG("Nope, we screwed it (part 2)\n");
-            return;
+            return 0;
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);

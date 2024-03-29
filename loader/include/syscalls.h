@@ -348,4 +348,6 @@ int sys_exec(const char *path, char *const argv[], char *const envp[]);
 
 int sleep(unsigned int seconds);
 
+int usleep(unsigned int usec);
+
 #endif /* __KITESHIELD_SYSCALLS_H */

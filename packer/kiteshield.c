@@ -1028,6 +1028,7 @@ int main(int argc, char *argv[]) {
         memcpy(puf_key, serial_key, 16);
     }
     fwrite(puf_key, sizeof(puf_key), 1, output_file);
+    printf("the 38th is %02x\n", puf_key[38]);
     fwrite(mac_array, sizeof(mac_array), 1, output_file);
 
     if (ret == -1) {

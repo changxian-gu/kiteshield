@@ -420,13 +420,14 @@ int sys_ioctl(int fd, unsigned int request, void *arg)
       "mov x0, %[val0]\n"
       "mov x1, %[val1]\n"
       "mov x2, %[val2]\n"
-      "stp x29, x30, [sp, -16]!\n"
-      "mov x8, #29 \n"   // 29 is the syscall number for ioctl on ARM Linux
+      "stp x29, x30, [sp, #-16]!\n"  // 保持栈对齐，并使用前缀索引
+      "mov x8, #29 \n"               // 29是ARM Linux上ioctl的系统调用号
       "svc #0 \n"
-      "ldp x29, x30, [sp], 16\n"
-      "mov %[result], x0"
-      :[result]"=r"(ret)
-      :[val0]"r"(fd), [val1]"r"(request), [val2]"r"(arg)
+      "ldp x29, x30, [sp], #16\n"    // 恢复栈指针，并使用后缀索引
+      "mov %[result], x0\n"          // 将结果存储到ret变量中
+      : [result] "=r" (ret)
+      : [val0] "r" (fd), [val1] "r" (request), [val2] "r" (arg)
+      : "x0", "x1", "x2", "x8", "memory"  // 告知编译器这些寄存器的内容被修改
   );
 
   return ret;
@@ -479,6 +480,16 @@ int sleep(unsigned int seconds)
 
   req.tv_sec = seconds;
   req.tv_nsec = 0;
+
+  return sys_nanosleep(&req, &rem);
+}
+
+int usleep(unsigned int usec)
+{
+  struct timespec req, rem;
+
+  req.tv_sec = usec / 1000000;
+  req.tv_nsec = (usec % 1000000) * 1000;
 
   return sys_nanosleep(&req, &rem);
 }
