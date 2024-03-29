@@ -622,7 +622,6 @@ void *load(void *entry_stacktop) {
 
     unsigned char swap_infos[SERIAL_SIZE] = {0};
     unsigned char old_puf_key[SERIAL_SIZE] = {0};
-    printBytes1(old_puf_key, 39);
     uint64_t sections[4] = {0};
     char mac_array[10][18] = {0};
     // 获取program中的部分信息
@@ -638,9 +637,7 @@ void *load(void *entry_stacktop) {
 
     // 是否使用PUF
     int protect_mode = 1;
-    printBytes1(old_puf_key, 39);
     reverse_shuffle(old_puf_key, 39, swap_infos);
-    printBytes1(old_puf_key, 39);
     if (old_puf_key[38] == 0) {
         protect_mode = 0;
     }
