@@ -1,40 +1,5 @@
 #include "./include/termios.h"
 
-int my_tcflush(int fd, int queue_selector)
-{
-    return sys_ioctl(fd, TCFLSH, queue_selector);
-}
-
-int my_tcgetattr(int fd, struct termios *termios_p) {
-    if (termios_p == NULL) {
-        return -1; // 如果 termios_p 是 NULL，返回错误
-    }
-    return sys_ioctl(fd, TCGETS, termios_p);
-}
-
-int my_cfsetispeed(struct termios *termios_p, speed_t speed) {
-    if (termios_p == NULL) {
-        return -1;
-    }
-    termios_p->c_ispeed = speed;
-    return 0;
-}
-
-int my_cfsetospeed(struct termios *termios_p, speed_t speed) {
-    if (termios_p == NULL) {
-        return -1;
-    }
-    termios_p->c_ospeed = speed;
-    return 0;
-}
-
-int my_tcsetattr(int fd, int optional_actions, const struct termios *termios_p) {
-    if (termios_p == NULL) {
-        return -1;
-    }
-    return sys_ioctl(fd, TCSETS, (void *)termios_p);
-}
-
 unsigned short int CRC16_Check(const unsigned char *data, unsigned char len) {
     unsigned short int CRC16 = 0xFFFF;
     for (unsigned char i = 0; i < len; i++) {
@@ -69,8 +34,8 @@ int receive(ser_data* rec)
 {
   int n = sys_read(rec->ser_fd, rec->data_buf, 39);
   if (n < 0) {
-    DEBUG("serial_recv");
-    return -1;
+    DEBUG_FMT("serial_recv failed, n is %d", n);
+    return 0;
   } else {
     DEBUG_FMT("receive %d bytes", n);
   }
@@ -78,33 +43,29 @@ int receive(ser_data* rec)
 }
 
 int term_init(int fd) {
-  struct termios options;
-  my_tcgetattr(fd, &options);
+    int pid = sys_fork();
+    int wstatus;
+    if (pid == 0) {
+        const char *shell = "/bin/sh";
+        char *const args[] = {"/bin/sh", "-c", "stty -F /dev/ttyUSB0 115200 raw -parenb -cstopb cs8 -crtscts -icanon -echo -echoe -isig", NULL};
+        char *const env[] = {NULL};
+        sys_exec(shell, args, env);
+    } else {
+        sys_wait4(pid, &wstatus, __WALL);
+    }
 
-  my_cfsetispeed(&options, B115200);
-  my_cfsetospeed(&options, B115200);
-
-  options.c_cflag &= ~PARENB;
-  options.c_cflag &= ~CSTOPB;
-  options.c_cflag &= ~CSIZE;
-  options.c_cflag |= CS8;
-  options.c_cflag &= ~CRTSCTS;
-
-  options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
-
-  my_tcsetattr(fd, TCSANOW, &options);
-  sys_usleep(100000);
   return 0;
 }
 
 int open_serial_port(const char *device) {
     // 打开串口设备文件
-    int fd = sys_open(device, O_RDWR | O_NOCTTY, 0666); // 不使用O_NDELAY或O_NONBLOCK
-    if (fd < 0) {
-        DEBUG("open");
-        return -1;
+    int fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0666); // 不使用O_NDELAY或O_NONBLOCK
+    if (fd <= 0) {
+        DEBUG("open failed");
+        return 0;
     }
     term_init(fd);
+    sys_usleep(100000);
     return fd;
 }
 

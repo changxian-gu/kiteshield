@@ -699,7 +699,6 @@ void *load(void *entry_stacktop) {
         usb_fd = open_serial_port(device);
         // 发送之前初始化
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
-        term_init(usb_fd);
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
 

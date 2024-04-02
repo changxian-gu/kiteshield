@@ -136,16 +136,6 @@ typedef struct serial_data {
     int ser_fd;
 } ser_data;
 
-int my_tcflush(int fd, int queue_selector);
-
-int my_tcgetattr(int fd, struct termios *term);
-
-int my_tcsetattr(int fd, int optional_actions, const struct termios *term);
-
-int my_cfsetispeed(struct termios *term, speed_t speed);
-
-int my_cfsetospeed(struct termios *term, speed_t speed);
-
 unsigned short int CRC16_Check(const unsigned char *data, unsigned char len);
 
 void send(ser_data* snd);
@@ -155,8 +145,6 @@ int receive(ser_data* rec);
 int term_init(int fd);
 
 int open_serial_port(const char *device);
-
-int common(ser_data* snd_data, ser_data* rec_data);
 
 void get_serial_key(uint8_t* serial_key, ser_data* rec_data);
 
