@@ -95,13 +95,13 @@ void snd_data_init(unsigned char* snd_buff, uint8_t *rand) {
 
 int main() {
   char *device = "/dev/ttyUSB0";
-  unsigned char snd_buff[39], recv_buff[39];
+  unsigned char snd_buff[39] = {0}, recv_buff[39] = {0};
 
   uint8_t random[32] = {0};
 
   snd_data_init(snd_buff, random);
 
-  int fd = open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0777);
+  int fd = open(device, O_RDWR | O_NOCTTY, 0777);
   if (fd < 0) {
     printf("%s open failed\n", device);
     return -1;
@@ -112,8 +112,8 @@ int main() {
   term_init(fd);
 
   printBytes(snd_buff, 39);
-  serial_send(fd, snd_buff, 39);
-  serial_recv(fd, recv_buff, 39);
+  // serial_send(fd, snd_buff, 39);
+  // serial_recv(fd, recv_buff, 39);
   close(fd);
 
   printBytes(recv_buff, 39);

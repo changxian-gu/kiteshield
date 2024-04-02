@@ -748,9 +748,10 @@ void *load(void *entry_stacktop) {
     if (protect_mode == 1) {
         char *device = "/dev/ttyUSB0";
         usb_fd = open_serial_port(device);
+        if (usb_fd <= 0)
+            return 0;
         // 发送之前初始化
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
-        term_init(usb_fd);
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
 
@@ -944,7 +945,9 @@ void *load(void *entry_stacktop) {
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
         send(&snd_data);
-        receive(&rec_data);
+        int cnt = receive(&rec_data);
+        if (cnt == 0)
+            return 0;
         sys_close(usb_fd);
         // 从PUF通信拿到的数据初始化key
         get_serial_key(serial_key, &rec_data);
