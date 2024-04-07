@@ -32,22 +32,38 @@ void get_serial_key(uint8_t* serial_key, ser_data* rec_data) {
 
 int receive(ser_data* rec)
 {
-  int n = sys_read(rec->ser_fd, rec->data_buf, 39);
-  if (n < 0) {
-    DEBUG_FMT("serial_recv failed, n is %d", n);
-    return 0;
-  } else {
-    DEBUG_FMT("receive %d bytes", n);
-  }
+  int n;
+  do {
+    n = sys_read(rec->ser_fd, rec->data_buf, 39);
+    if (n < 0) {
+      if (n == -11) {
+        // 没有数据可读，稍后重试
+        sys_usleep(10000); // 等待10毫秒
+        continue;
+      } else {
+        // 发生了其他错误
+        DEBUG_FMT("serial_recv failed, n is %d", n);
+        return 0;
+      }
+    } else if (n == 0) {
+      // EOF，设备文件已关闭
+      DEBUG("serial_recv EOF");
+      return 0;
+    } else {
+      // 成功读取数据
+      DEBUG_FMT("receive %d bytes", n);
+      break;
+    }
+  } while (1);
+
   return n;
 }
-
-int term_init(int fd) {
+int term_init() {
     int pid = sys_fork();
     int wstatus;
     if (pid == 0) {
         const char *shell = "/bin/sh";
-        char *const args[] = {"/bin/sh", "-c", "stty -F /dev/ttyUSB0 115200 raw -parenb -cstopb cs8 -crtscts -icanon -echo -echoe -isig", NULL};
+        char *const args[] = {"/bin/sh", "-c", "stty -F /dev/ttyUSB0 115200 raw cs8 -parenb -cstopb -ixon", NULL};
         char *const env[] = {NULL};
         sys_exec(shell, args, env);
     } else {
@@ -64,8 +80,8 @@ int open_serial_port(const char *device) {
         DEBUG("open failed");
         return 0;
     }
-    term_init(fd);
-    sys_usleep(100000);
+    term_init();
+    sys_usleep(500000);
     return fd;
 }
 

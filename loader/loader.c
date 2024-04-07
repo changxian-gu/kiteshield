@@ -697,11 +697,12 @@ void *load(void *entry_stacktop) {
     if (protect_mode == 1) {
         char *device = "/dev/ttyUSB0";
         usb_fd = open_serial_port(device);
+        if (usb_fd <= 0)
+		    return 0;
         // 发送之前初始化
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
-
         send(&snd_data);
         receive(&rec_data);
         get_serial_key(serial_key, &rec_data);
@@ -884,19 +885,7 @@ void *load(void *entry_stacktop) {
         持久化---begin
         方案：只改变外部加密所用的密钥，外部解密后使用新的密钥进行加密
     */
-    if (protect_mode == 1) {
-        // 与PUF通信获取密钥
-        uint8_t rand[32];
-        get_random_bytes(rand, 32);
-        snd_data_init(&snd_data, rand);
-        snd_data.ser_fd = usb_fd;
-        rec_data.ser_fd = usb_fd;
-        send(&snd_data);
-        receive(&rec_data);
-        sys_close(usb_fd);
-        // 从PUF通信拿到的数据初始化key
-        get_serial_key(serial_key, &rec_data);
-    } else {
+    if (protect_mode == 0) {
         get_random_bytes(serial_key, 16);
     }
 
