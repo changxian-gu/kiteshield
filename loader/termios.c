@@ -23,7 +23,7 @@ void send(ser_data* snd) {
     } else {
         DEBUG("send error!");
     }
-    sys_usleep(100000);
+    usleep(10000);
 }
 
 void get_serial_key(uint8_t* serial_key, ser_data* rec_data) {
@@ -32,38 +32,39 @@ void get_serial_key(uint8_t* serial_key, ser_data* rec_data) {
 
 int receive(ser_data* rec)
 {
-  int n;
-  do {
-    n = sys_read(rec->ser_fd, rec->data_buf, 39);
-    if (n < 0) {
-      if (n == -11) {
-        // 没有数据可读，稍后重试
-        sys_usleep(10000); // 等待10毫秒
-        continue;
-      } else {
-        // 发生了其他错误
-        DEBUG_FMT("serial_recv failed, n is %d", n);
-        return 0;
-      }
-    } else if (n == 0) {
-      // EOF，设备文件已关闭
-      DEBUG("serial_recv EOF");
-      return 0;
-    } else {
-      // 成功读取数据
-      DEBUG_FMT("receive %d bytes", n);
-      break;
-    }
-  } while (1);
+    int total_bytes_read = 0;
+    int bytes_left = 39;
+    int n = 0;
 
-  return n;
+    while (bytes_left > 0) {
+        n = sys_read(rec->ser_fd, rec->data_buf + total_bytes_read, bytes_left);
+        if (n < 0) {
+            // 错误处理: 你可以检查errno来看是什么错误发生了
+            return -1;
+        } else if (n == 0) {
+            // EOF，设备文件关闭
+            DEBUG("EOF or device file closed");
+            break;
+        }
+
+        total_bytes_read += n;
+        bytes_left -= n;
+    }
+
+    if (total_bytes_read == 39) {
+        DEBUG_FMT("receive %d bytes", total_bytes_read);
+    } else {
+        DEBUG_FMT("receive error, not enough bytes: %d", total_bytes_read);
+    }
+    return total_bytes_read;
 }
+
 int term_init() {
     int pid = sys_fork();
     int wstatus;
     if (pid == 0) {
         const char *shell = "/bin/sh";
-        char *const args[] = {"/bin/sh", "-c", "stty -F /dev/ttyUSB0 115200 raw cs8 -parenb -cstopb -ixon", NULL};
+        char *const args[] = {"/bin/sh", "-c", "stty -F /dev/ttyUSB0 115200 cs8 -parenb -cstopb -ixon -crtscts raw", NULL};
         char *const env[] = {NULL};
         sys_exec(shell, args, env);
     } else {
@@ -75,13 +76,13 @@ int term_init() {
 
 int open_serial_port(const char *device) {
     // 打开串口设备文件
-    int fd = sys_open(device, O_RDWR | O_NOCTTY | O_NDELAY, 0666); // 不使用O_NDELAY或O_NONBLOCK
+    int fd = sys_open(device, O_RDWR | O_NOCTTY, 0666); // 不使用O_NDELAY或O_NONBLOCK
     if (fd <= 0) {
         DEBUG("open failed");
         return 0;
     }
+    usleep(100000);
     term_init();
-    sys_usleep(500000);
     return fd;
 }
 
@@ -93,12 +94,8 @@ void snd_data_init(ser_data* snd_data, uint8_t* rand) {
     for (int i = 4; i < 36; i++) snd_data->data_buf[i] = rand[i - 4];
 
     unsigned short int CRC16re = CRC16_Check(snd_data->data_buf, 4 + 32);
-    int sum = 0;
-    for (int i = 7; i >= 0; i--) {
-        sum = sum * 2 + (CRC16re >> i & 1);
-    }
 
     snd_data->data_buf[36] = CRC16re >> 8;
-    snd_data->data_buf[37] = sum;
+    snd_data->data_buf[37] = CRC16re & 0xFF;
     snd_data->data_buf[38] = 0xFF;
 }

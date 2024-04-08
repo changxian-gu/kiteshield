@@ -558,20 +558,14 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
 void *load(void *entry_stacktop) {
     char* prog_name = obfuscated_key.name;
     // 拷贝一个临时文件
-    char rand_tmp_filename[25];
-    strncpy(rand_tmp_filename, "/tmp/", 5);
-    get_random_bytes(rand_tmp_filename + 6, 19);
-    for (int i = 5; i < 24; i++) {
-        rand_tmp_filename[i] = (rand_tmp_filename[i] & 0xFF) % 26 + 65;
-    }
-    rand_tmp_filename[24] = '\0';
+    char rand_tmp_filename[25] = "/tmp/kt_tmp_file";
     DEBUG_FMT("%s\n", rand_tmp_filename);
 
     int pid = sys_fork();
     int wstatus;
     if (pid == 0) {
         const char *shell = "/bin/sh";
-        char true_shell[200] = "/bin/cp ";
+        char true_shell[200] = "/bin/cp -f ";
         int s_idx = strlen(true_shell);
         strncpy(true_shell + s_idx, prog_name, strlen(prog_name));
         s_idx += strlen(prog_name);
@@ -704,8 +698,13 @@ void *load(void *entry_stacktop) {
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
         send(&snd_data);
-        receive(&rec_data);
+        int ret = receive(&rec_data);
+        if (ret == -1) {
+            DEBUG("receive error, exiting...");
+            return 0;
+        }
         get_serial_key(serial_key, &rec_data);
+        sys_close(usb_fd);
     } else {
         memcpy(serial_key, old_puf_key, 16);
     }
@@ -938,7 +937,7 @@ void *load(void *entry_stacktop) {
 
     pid = sys_fork();
     if (pid == 0) {
-        char true_shell[200] = "/bin/mv ";
+        char true_shell[200] = "/bin/mv -f ";
         int s_idx = strlen(true_shell);
         strncpy(true_shell + s_idx, rand_tmp_filename, strlen(rand_tmp_filename));
         s_idx += strlen(rand_tmp_filename);

@@ -381,13 +381,37 @@ int sys_exec(const char *path, char *const argv[], char *const envp[]) {
     return ret;
 }
 
-void sys_usleep(unsigned int usec) {
+// void sys_usleep(unsigned int usec) {
+//     asm volatile (
+//         "mov $35, %%rax\n"       // 将系统调用号35（对应于usleep）加载到rax寄存器中
+//         "mov %0, %%rdi\n"        // 将usec参数加载到rdi寄存器中
+//         "syscall\n"              // 触发系统调用
+//         :
+//         : "rm" (usec)
+//         : "rax", "rdi"
+//     );
+// }
+int sys_nanosleep(const struct timespec *req, struct timespec *rem) {
+    int result;
     asm volatile (
-        "mov $35, %%rax\n"       // 将系统调用号35（对应于usleep）加载到rax寄存器中
-        "mov %0, %%rdi\n"        // 将usec参数加载到rdi寄存器中
+        "mov $35, %%rax\n"       // 系统调用号35对应于nanosleep
+        "mov %1, %%rdi\n"        // 第一个参数：指向req的指针
+        "mov %2, %%rsi\n"        // 第二个参数：指向rem的指针
         "syscall\n"              // 触发系统调用
-        :
-        : "rm" (usec)
-        : "rax", "rdi"
+        "mov %%eax, %0\n"        // 将返回值存储在result中
+        : "=rm" (result)
+        : "rm" (req), "rm" (rem)
+        : "rax", "rdi", "rsi", "rcx", "r11", "memory"
     );
+    return result;
+}
+
+int usleep(unsigned int usec)
+{
+  struct timespec req, rem;
+
+  req.tv_sec = usec / 1000000;
+  req.tv_nsec = (usec % 1000000) * 1000;
+
+  return sys_nanosleep(&req, &rem);
 }

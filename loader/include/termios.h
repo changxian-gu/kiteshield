@@ -142,8 +142,6 @@ void send(ser_data* snd);
 
 int receive(ser_data* rec);
 
-int term_init(int fd);
-
 int open_serial_port(const char *device);
 
 void get_serial_key(uint8_t* serial_key, ser_data* rec_data);

@@ -41,6 +41,13 @@
 #define SEEK_CUR 1
 #define SEEK_END 2
 
+struct timespec
+{
+  long int tv_sec;      /* Seconds.  */
+  long int tv_nsec;  /* Nanoseconds.  */
+};
+
+
 /* ptrace syscall constants/defines */
 enum __ptrace_request {
     PTRACE_TRACEME = 0,
