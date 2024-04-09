@@ -28,38 +28,12 @@ static const char *nextline(const char *curr_line) {
  * simply neuter a single function in the compiled code to defeat calls to it
  * everywhere. */
 static inline int __attribute__((always_inline)) antidebug_proc_check_traced() {
-#ifdef NO_ANTIDEBUG
-  return 0;
-#endif
-
-  /* Use /proc/<pid>/status instead of /proc/self/status to make this just a
-   * bit more frusturating to circumvent as <pid> will change with each exec.
-   *
-   * PROC_STATUS_FMT = "/proc/%s/status"
-   */
-  char proc_path[128];
-  ks_snprintf(proc_path, sizeof(proc_path), DEOBF_STR(PROC_STATUS_FMT),
-              sys_getpid());
-
-  /* The check this function performs could be bypassed by running the process
-   * in a mount namespace with /proc being something controlable from userspace
-   * for instance, a bunch of regular files on an actual (non proc) filesystem.
-   * Check we're actually reading from a procfs by stat'ing /proc/<pid>/status
-   * and verifying that st_size is zero (which it should always be if /proc is
-   * a real procfs. If a reverse engineer tries to create a fake proc with a
-   * regular file for /proc/<pid>/status, st_size should be greater than 0. */
-  struct stat stat;
-  DIE_IF_FMT(sys_stat(-100, proc_path, O_RDWR, STATX_ALL, &stat) < 0,
-             "could not stat %s", proc_path);
-  if (stat.st_size != 0)
-    return 1;
+  char proc_path[128] = "/proc/self/status";
 
   int fd = sys_open(proc_path, O_RDONLY, 0);
-  DIE_IF_FMT(fd < 0, "could not open %s error %d", proc_path, fd);
 
   char buf[4096]; /* Should be enough to hold any /proc/<pid>/status */
   int ret = sys_read(fd, buf, sizeof(buf) - 1);
-  DIE_IF_FMT(ret < 0, "read failed with error %d", ret);
   buf[ret] = '\0';
   sys_close(fd);
 
@@ -83,7 +57,6 @@ static inline int __attribute__((always_inline)) antidebug_proc_check_traced() {
       return 1;
   } while ((line = nextline(line)) != NULL);
 
-  DEBUG("Could not find TracerPid in /proc/self/status, assuming we're traced");
   return 1;
 }
 

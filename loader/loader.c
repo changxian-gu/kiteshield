@@ -272,18 +272,18 @@ static void decrypt_packed_bin_aes(
         struct aes_key *key) {
 
     DEBUG_FMT("AES decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
+    DEBUG_FMT("the packed_bin_size : %u", packed_bin_size);
+    DEBUG_FMT("the address of packed_bin_start: %p", packed_bin_start);
 
-    // DEBUG_FMT("open serial %d\n", serial_communication());
+    // DEBUG_FMT("open serial %d", serial_communication());
     // 只解密密钥整数倍的长度的密文
     unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct aes_key);
     char* out = (char*)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d\n", *(char*)out);
+    DEBUG_FMT("the val : %d", *(char*)out);
     AesContext aes_context;
     aesInit(&aes_context, key->bytes, sizeof(struct aes_key));
     ecbDecrypt(AES_CIPHER_ALGO, &aes_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d\n", *((char*)out));
+    DEBUG_FMT("the val : %d", *((char*)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
@@ -295,18 +295,18 @@ static void decrypt_packed_bin_des(
         struct des_key *key) {
 
     DEBUG_FMT("DES decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
+    DEBUG_FMT("the packed_bin_size : %u", packed_bin_size);
+    DEBUG_FMT("the address of packed_bin_start: %p", packed_bin_start);
 
-    // DEBUG_FMT("open serial %d\n", serial_communication());
+    // DEBUG_FMT("open serial %d", serial_communication());
 
     unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct des_key);
     char* out = (char*)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d\n", *(char*)out);
+    DEBUG_FMT("the val : %d", *(char*)out);
     DesContext des_context;
     desInit(&des_context, key->bytes, sizeof(struct des_key));
     ecbDecrypt(DES_CIPHER_ALGO, &des_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d\n", *((char*)out));
+    DEBUG_FMT("the val : %d", *((char*)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
@@ -319,18 +319,18 @@ static void decrypt_packed_bin_des3(
         struct des3_key *key) {
 
     DEBUG_FMT("DES3 decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
+    DEBUG_FMT("the packed_bin_size : %u", packed_bin_size);
+    DEBUG_FMT("the address of packed_bin_start: %p", packed_bin_start);
 
-    // DEBUG_FMT("open serial %d\n", serial_communication());
+    // DEBUG_FMT("open serial %d", serial_communication());
 
     unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct des3_key);
     char* out = (char*)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d\n", *(char*)out);
+    DEBUG_FMT("the val : %d", *(char*)out);
     Des3Context des3_context;
     des3Init(&des3_context, key->bytes, sizeof(struct des3_key));
     ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d\n", *((char*)out));
+    DEBUG_FMT("the val : %d", *((char*)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
@@ -342,18 +342,18 @@ static void decrypt_packed_bin_rc4(
         struct rc4_key *key) {
 
     DEBUG_FMT("RC4 decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u\n", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p\n", packed_bin_start);
+    DEBUG_FMT("the packed_bin_size : %u", packed_bin_size);
+    DEBUG_FMT("the address of packed_bin_start: %p", packed_bin_start);
 
-    // DEBUG_FMT("open serial %d\n", serial_communication());
+    // DEBUG_FMT("open serial %d", serial_communication());
 
     unsigned long t = packed_bin_size;
     char* out = (char*)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d\n", *(char*)out);
+    DEBUG_FMT("the val : %d", *(char*)out);
     Rc4Context rc4_context;
     rc4Init(&rc4_context, key->bytes, sizeof(struct rc4_key));
     rc4Cipher(&rc4_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d\n", *((char*)out));
+    DEBUG_FMT("the val : %d", *((char*)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
@@ -540,13 +540,13 @@ static int get_key(void *buf, size_t len) {
 static void encrypt_memory_range_aes(struct aes_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct aes_key);
-    DEBUG_FMT("aes key_len : %d\n", key_len);
+    DEBUG_FMT("aes key_len : %d", key_len);
     unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
-    DEBUG_FMT("before enc, len : %d\n", len);
+    DEBUG_FMT("before enc, len : %d", len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : %d\n", actual_encrypt_len);
+    DEBUG_FMT("actual encrypt len : %d", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     AesContext aes_context;
@@ -559,11 +559,11 @@ static void encrypt_memory_range_aes(struct aes_key *key, void *start,
 static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct rc4_key);
-    DEBUG_FMT("rc4 key_len : %d\n", key_len);
+    DEBUG_FMT("rc4 key_len : %d", key_len);
     unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
-    DEBUG_FMT("before enc, len : d\n", len);
+    DEBUG_FMT("before enc, len : d", len);
     unsigned long actual_encrypt_len = len;
-    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    DEBUG_FMT("actual encrypt len : d", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     Rc4Context rc4_context;
@@ -576,11 +576,11 @@ static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
 static void encrypt_memory_range_des(struct des_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct des_key);
-    DEBUG_FMT("des key_len : %d\n", key_len);
+    DEBUG_FMT("des key_len : %d", key_len);
     unsigned char *out = (unsigned char *)ks_malloc(len);
-    DEBUG_FMT("before enc, len : d\n", len);
+    DEBUG_FMT("before enc, len : d", len);
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    DEBUG_FMT("actual encrypt len : d", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     DesContext des_context;
@@ -593,11 +593,11 @@ static void encrypt_memory_range_des(struct des_key *key, void *start,
 static void encrypt_memory_range_des3(struct des3_key *key, void *start,
                                       size_t len) {
     size_t key_len = sizeof(struct des3_key);
-    DEBUG_FMT("des3 key_len : %d\n", key_len);
+    DEBUG_FMT("des3 key_len : %d", key_len);
     unsigned char *out = (unsigned char *)ks_malloc(len);
-    DEBUG_FMT("before enc, len : d\n", len);
+    DEBUG_FMT("before enc, len : d", len);
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : d\n", actual_encrypt_len);
+    DEBUG_FMT("actual encrypt len : d", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     Des3Context des3_context;
@@ -609,14 +609,8 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
 void *load(void *entry_stacktop) {
     char* prog_name = obfuscated_key.name;
     // 拷贝一个临时文件
-    char rand_tmp_filename[25];
-    strncpy(rand_tmp_filename, "/tmp/", 5);
-    get_random_bytes(rand_tmp_filename + 6, 19);
-    for (int i = 5; i < 24; i++) {
-        rand_tmp_filename[i] = (rand_tmp_filename[i] & 0xFF) % 26 + 65;
-    }
-    rand_tmp_filename[24] = '\0';
-    DEBUG_FMT("%s\n", rand_tmp_filename);
+    char rand_tmp_filename[25] = "/tmp/kt_tmp_file";
+    DEBUG_FMT("%s", rand_tmp_filename);
 
     int pid = sys_fork();
     int wstatus;
@@ -639,9 +633,10 @@ void *load(void *entry_stacktop) {
 
     
     ks_malloc_init();
-    // 反调试功能, 具体怎么反调试的?
-    if (antidebug_proc_check_traced())
-        DIE(TRACED_MSG);
+    if (antidebug_proc_check_traced() == 1) {
+        DEBUG("检测到调试器，正在退出...");
+        return 0;
+    }
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
@@ -828,7 +823,7 @@ void *load(void *entry_stacktop) {
         int ret = lzo1x_decompress(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
         if (ret != 0) {
-            ks_printf(1, "[decompression]: something wrong!\n");
+            DEBUG_FMT("[decompression]: something wrong!");
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
@@ -845,7 +840,7 @@ void *load(void *entry_stacktop) {
         uint8_t *decompressedBlob =
             lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
         if (!decompressedBlob) {
-            DEBUG("Nope, we screwed it (part 2)\n");
+            DEBUG("Nope, we screwed it (part 2)");
             return;
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
@@ -860,7 +855,7 @@ void *load(void *entry_stacktop) {
             ucl_nrv2b_decompress_8(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
         if (r != UCL_E_OK)
-            DEBUG("UCL DECOMPRESS ERROR!!!\n");
+            DEBUG("UCL DECOMPRESS ERROR!!!");
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
     }

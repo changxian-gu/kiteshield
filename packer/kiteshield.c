@@ -823,7 +823,7 @@ int hexStringToByteArray(const char *hexString, unsigned char *byteArray, int by
 }
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
-    int layer_one_only = 0;
+    int layer_one_only = 1;
     int c;
     int ret;
     const char* puf_path;
@@ -917,9 +917,9 @@ int main(int argc, char *argv[]) {
     void *loader;
     size_t loader_size;
     // 是否需要对内层加密
+    printf("[STATE] node:5 ; message:函数加密\n");
     if (!layer_one_only) {
         struct runtime_info *rt_info = NULL;
-        printf("[STATE] node:5 ; message:函数加密\n");
         ret = apply_inner_encryption(&elf, &rt_info);
         if (ret == -1) {
             err("could not apply inner encryption");
