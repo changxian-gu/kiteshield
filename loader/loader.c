@@ -583,8 +583,10 @@ void *load(void *entry_stacktop) {
     
     ks_malloc_init();
     // 反调试功能, 具体怎么反调试的?
-    if (antidebug_proc_check_traced())
-        DIE(TRACED_MSG);
+    if (antidebug_proc_check_traced() == 1) {
+        DEBUG("检测到调试器，正在退出...");
+        return 0;
+    }
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */

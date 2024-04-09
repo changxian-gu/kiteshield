@@ -35,9 +35,9 @@ static inline int __attribute__((always_inline)) antidebug_proc_check_traced() {
      *
      * PROC_STATUS_FMT = "/proc/%s/status"
      */
-    char proc_path[128];
-    ks_snprintf(proc_path, sizeof(proc_path), DEOBF_STR(PROC_STATUS_FMT),
-                sys_getpid());
+    char proc_path[128] = "/proc/self/status";
+    // ks_snprintf(proc_path, sizeof(proc_path), DEOBF_STR(PROC_STATUS_FMT),
+    //             sys_getpid());
 
     /* The check this function performs could be bypassed by running the process
      * in a mount namespace with /proc being something controlable from userspace
