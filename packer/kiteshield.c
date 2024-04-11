@@ -542,41 +542,41 @@ static int apply_inner_encryption(struct mapped_elf *elf,
     return 0;
 }
 
-static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
+static int apply_sections_encryption(struct mapped_elf *elf, uint64_t sections[]) {
     if (encryption_algorithm == AES) {
         printf("[Packer] Using AES...\n");
         struct aes_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        info("applying section encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        encrypt_memory_range_aes(&key, (void *)(elf->start + rand[0]), rand[1]);
-        encrypt_memory_range_aes(&key, (void *)(elf->start + rand[2]), rand[3]);
+        encrypt_memory_range_aes(&key, (void *)(elf->start + sections[0]), sections[1]);
+        encrypt_memory_range_aes(&key, (void *)(elf->start + sections[2]), sections[3]);
     } else if (encryption_algorithm == DES) {
         printf("[Packer] Using DES...\n");
         struct des_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        info("applying section encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        encrypt_memory_range_des(&key, (void *)(elf->start + rand[0]), rand[1]);
-        encrypt_memory_range_des(&key, (void *)(elf->start + rand[2]), rand[3]);
+        encrypt_memory_range_des(&key, (void *)(elf->start + sections[0]), sections[1]);
+        encrypt_memory_range_des(&key, (void *)(elf->start + sections[2]), sections[3]);
     } else if (encryption_algorithm == RC4) {
         printf("[Packer] Using RC4...\n");
         struct rc4_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        info("applying section encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        encrypt_memory_range_rc4(&key, (void *)(elf->start + rand[0]), rand[1]);
-        encrypt_memory_range_rc4(&key, (void *)(elf->start + rand[2]), rand[3]);
+        encrypt_memory_range_rc4(&key, (void *)(elf->start + sections[0]), sections[1]);
+        encrypt_memory_range_rc4(&key, (void *)(elf->start + sections[2]), sections[3]);
     } else if (encryption_algorithm == TDEA) {
         printf("[Packer] Using TDEA...\n");
         struct des3_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
+        info("applying section encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
-        encrypt_memory_range_des3(&key, (void *)(elf->start + rand[0]),
-                                  rand[1]);
-        encrypt_memory_range_des3(&key, (void *)(elf->start + rand[2]),
-                                  rand[3]);
+        encrypt_memory_range_des3(&key, (void *)(elf->start + sections[0]),
+                                  sections[1]);
+        encrypt_memory_range_des3(&key, (void *)(elf->start + sections[2]),
+                                  sections[3]);
     }
     return 0;
 }

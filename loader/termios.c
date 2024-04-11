@@ -15,15 +15,14 @@ unsigned short int CRC16_Check(const unsigned char *data, unsigned char len) {
     return CRC16;
 }
 
-void send(ser_data* snd) {
+int send(ser_data* snd) {
     ssize_t ret = sys_write(snd->ser_fd, snd->data_buf, 39);
     if (ret > 0) {
         DEBUG_FMT("send %d bytes", ret);
-        DEBUG("send success.");
     } else {
-        DEBUG("send error!");
+        return -1;
     }
-    usleep(10000);
+    usleep(100000);
 }
 
 void get_serial_key(uint8_t* serial_key, ser_data* rec_data) {

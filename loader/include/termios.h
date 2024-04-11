@@ -138,7 +138,7 @@ typedef struct serial_data {
 
 unsigned short int CRC16_Check(const unsigned char *data, unsigned char len);
 
-void send(ser_data* snd);
+int send(ser_data* snd);
 
 int receive(ser_data* rec);
 

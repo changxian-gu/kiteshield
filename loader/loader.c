@@ -285,12 +285,15 @@ static void decrypt_packed_bin_aes(void *packed_bin_start,
     // 只解密密钥整数倍的长度的密文
     unsigned long t =
         packed_bin_size - packed_bin_size % sizeof(struct aes_key);
-    char *out = (char *)ks_malloc(t * sizeof(char));
+    DEBUG_FMT("实际解密长度：%d", t);
+    if (t == 0)
+        return;
+    char *out = (char *)ks_malloc(t);
     AesContext aes_context;
     aesInit(&aes_context, key->bytes, sizeof(struct aes_key));
-    ecbDecrypt(AES_CIPHER_ALGO, &aes_context, packed_bin_start, out, t);
+    int ret = ecbDecrypt(AES_CIPHER_ALGO, &aes_context, packed_bin_start, out, t);
     memcpy(packed_bin_start, out, t);
-    DEBUG_FMT("decrypt success %d", 1);
+    DEBUG_FMT("decrypt success %d", ret);
     ks_free(out);
 }
 
@@ -303,12 +306,15 @@ static void decrypt_packed_bin_des(void *packed_bin_start,
 
     unsigned long t =
         packed_bin_size - packed_bin_size % sizeof(struct des_key);
+    DEBUG_FMT("实际解密长度：%d", t);
+    if (t == 0)
+        return;
     char *out = (char *)ks_malloc(t * sizeof(char));
     DesContext des_context;
     desInit(&des_context, key->bytes, sizeof(struct des_key));
-    ecbDecrypt(DES_CIPHER_ALGO, &des_context, packed_bin_start, out, t);
+    int ret = ecbDecrypt(DES_CIPHER_ALGO, &des_context, packed_bin_start, out, t);
     memcpy(packed_bin_start, out, t);
-    DEBUG_FMT("decrypt success %d", 1);
+    DEBUG_FMT("decrypt success %d", ret);
     ks_free(out);
 }
 
@@ -321,12 +327,15 @@ static void decrypt_packed_bin_des3(void *packed_bin_start,
 
     unsigned long t =
         packed_bin_size - packed_bin_size % sizeof(struct des3_key);
+    DEBUG_FMT("实际解密长度：%d", t);
+    if (t == 0)
+        return;
     char *out = (char *)ks_malloc(t * sizeof(char));
     Des3Context des3_context;
     des3Init(&des3_context, key->bytes, sizeof(struct des3_key));
-    ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
+    int ret = ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
     memcpy(packed_bin_start, out, t);
-    DEBUG_FMT("decrypt success %d", 1);
+    DEBUG_FMT("decrypt success %d", ret);
     ks_free(out);
 }
 
@@ -338,6 +347,9 @@ static void decrypt_packed_bin_rc4(void *packed_bin_start,
     // DEBUG_FMT("open serial %d\n", serial_communication());
 
     unsigned long t = packed_bin_size;
+    DEBUG_FMT("实际解密长度：%d", t);
+    if (t == 0)
+        return;
     char *out = (char *)ks_malloc(t * sizeof(char));
     Rc4Context rc4_context;
     rc4Init(&rc4_context, key->bytes, sizeof(struct rc4_key));
@@ -559,7 +571,7 @@ void *load(void *entry_stacktop) {
     char* prog_name = obfuscated_key.name;
     // 拷贝一个临时文件
     char rand_tmp_filename[25] = "/tmp/kt_tmp_file";
-    DEBUG_FMT("%s\n", rand_tmp_filename);
+    // DEBUG_FMT("%s", rand_tmp_filename);
 
     int pid = sys_fork();
     int wstatus;
@@ -699,14 +711,17 @@ void *load(void *entry_stacktop) {
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
-        send(&snd_data);
-        int ret = receive(&rec_data);
+        int ret = send(&snd_data);
+        if (ret == -1) {
+            DEBUG("send error");
+            return 0;
+        }
+        ret = receive(&rec_data);
         if (ret == -1) {
             DEBUG("receive error, exiting...");
             return 0;
         }
         get_serial_key(serial_key, &rec_data);
-        sys_close(usb_fd);
     } else {
         memcpy(serial_key, old_puf_key, 16);
     }
@@ -718,7 +733,7 @@ void *load(void *entry_stacktop) {
     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
 
     if (encryption_algorithm == AES) {
-        DEBUG("[LOADER] Using AES Decrypting...");
+        DEBUG("Using AES Decrypting...");
         // 拿到AES的真实KEY
         struct aes_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
@@ -726,14 +741,14 @@ void *load(void *entry_stacktop) {
         decrypt_packed_bin_aes((void *)packed_bin_phdr->p_vaddr,
                                packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == DES) {
-        DEBUG("[LOADER] Using DES Decrypting...");
+        DEBUG("Using DES Decrypting...");
         struct des_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_des((void *)packed_bin_phdr->p_vaddr,
                                packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == RC4) {
-        DEBUG("[LOADER] Using RC4 Decrypting...");
+        DEBUG("Using RC4 Decrypting...");
         struct rc4_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
         // loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key,
@@ -742,20 +757,20 @@ void *load(void *entry_stacktop) {
         decrypt_packed_bin_rc4((void *)packed_bin_phdr->p_vaddr,
                                packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == TDEA) {
-        DEBUG("[LOADER] Using TDEA Decrypting...");
+        DEBUG("Using TDEA Decrypting...");
         struct des3_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
         DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_des3((void *)packed_bin_phdr->p_vaddr,
                                 packed_bin_phdr->p_filesz, &actual_key);
     }
-    DEBUG("[LOADER] decrypt sucessfully");
+    DEBUG("Full decrypt sucessfully");
     // 把解密后的内容复制一份
     uint8_t* bin_new = ks_malloc(packed_bin_phdr->p_filesz);
     memcpy(bin_new, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
 
     if (compression_algorithm == ZSTD) {
-        DEBUG("[LOADER] Using ZSTD Decompressing...");
+        DEBUG("Using ZSTD uncompressing...");
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
@@ -766,8 +781,9 @@ void *load(void *entry_stacktop) {
                                            compressedBlob, compressedSize);
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
+        DEBUG("ZSTD FINISHED");
     } else if (compression_algorithm == LZO) {
-        DEBUG("[LOADER] Using LZO Decompressing...");
+        DEBUG("Using LZO uncompressing...");
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
@@ -777,14 +793,15 @@ void *load(void *entry_stacktop) {
         int ret = lzo1x_decompress(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
         if (ret != 0) {
-            ks_printf(1, "[decompression]: something wrong!\n");
+            DEBUG("[decompression]: something wrong!");
+            return 0;
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
         ks_free(decompressedBlob);
         DEBUG("LZO FINISHED");
     } else if (compression_algorithm == LZMA) {
-        DEBUG("[LOADER] Using LZMA Decompressing...");
+        DEBUG("Using LZMA uncompressing...");
         // lzma decompression
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
@@ -795,12 +812,14 @@ void *load(void *entry_stacktop) {
             lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
         if (!decompressedBlob) {
             DEBUG("Nope, we screwed it (part 2)\n");
-            return;
+            return 0;
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
+
+        DEBUG("LZMA FINISHED");
     } else if (compression_algorithm == UCL) {
-        DEBUG("[LOADER] Using UCL Decompressing...");
+        DEBUG("Using UCL uncompressing...");
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
@@ -808,10 +827,13 @@ void *load(void *entry_stacktop) {
         int r =
             ucl_nrv2b_decompress_8(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
-        if (r != UCL_E_OK)
+        if (r != UCL_E_OK) {
             DEBUG("UCL DECOMPRESS ERROR!!!\n");
+            return 0;
+        }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
+        DEBUG("UCL FINISHED");
     }
     if (obfuscated_key.pub_encryption == RSA) {
         DEBUG("Using RSA decrypting...");
@@ -830,7 +852,10 @@ void *load(void *entry_stacktop) {
         char* cipher = obfuscated_key.bytes;
         int cipher_len = 128;
         error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 128, &message_len);
-        DEBUG_FMT("decrypt error:%d", error);
+        if (error != 0) {
+            DEBUG_FMT("decrypt error:%d", error);
+            return 0;
+        }
         memcpy(obfuscated_key.bytes, output,message_len);
     } else if (obfuscated_key.pub_encryption == ECC) {
         DEBUG("Using ECC decrypting...");
@@ -844,38 +869,33 @@ void *load(void *entry_stacktop) {
     // text start, text len, data start, data len
     // 段解密
     if (encryption_algorithm == AES) {
-        DEBUG("[LOADER] Using AES Decrypting sections...");
-        // 拿到AES的真实KEY
+        DEBUG("Using AES Decrypting sections...");
         struct aes_key actual_key;
         memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
-        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
         decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + sections[0]),
                                sections[1], &actual_key);
         decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + sections[2]),
                                sections[3], &actual_key);
     } else if (encryption_algorithm == DES) {
-        DEBUG("[LOADER] Using DES Decrypting sections...");
+        DEBUG("Using DES Decrypting sections...");
         struct des_key actual_key;
         memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
-        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
         decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + sections[0]),
                                sections[1], &actual_key);
         decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + sections[2]),
                                sections[3], &actual_key);
     } else if (encryption_algorithm == RC4) {
-        DEBUG("[LOADER] Using RC4 Decrypting sections...");
+        DEBUG("Using RC4 Decrypting sections...");
         struct rc4_key actual_key;
         memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
-        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
         decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + sections[0]),
                                sections[1], &actual_key);
         decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + sections[2]),
                                sections[3], &actual_key);
     } else if (encryption_algorithm == TDEA) {
-        DEBUG("[LOADER] Using TDEA Decrypting sections...");
+        DEBUG("Using TDEA Decrypting sections...");
         struct des3_key actual_key;
         memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
-        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
         decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + sections[0]),
                                 sections[1], &actual_key);
         decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + sections[2]),
@@ -886,9 +906,32 @@ void *load(void *entry_stacktop) {
         持久化---begin
         方案：只改变外部加密所用的密钥，外部解密后使用新的密钥进行加密
     */
-    if (protect_mode == 0) {
+    if (protect_mode == 1) {
+        // 与PUF通信获取密钥
+        uint8_t rand[32];
+        get_random_bytes(rand, 32);
+        snd_data_init(&snd_data, rand);
+        snd_data.ser_fd = usb_fd;
+        rec_data.ser_fd = usb_fd;
+        int ret = send(&snd_data);
+        if (ret == -1) {
+            DEBUG("send error");
+            return 0;
+        }
+        int cnt = receive(&rec_data);
+        printBytes1(snd_data.data_buf, 39);
+        printBytes1(rec_data.data_buf, 39);
+        if (cnt == 0)
+            return 0;
+        sys_close(usb_fd);
+        // 从PUF通信拿到的数据初始化key
+        get_serial_key(serial_key, &rec_data);
+    } else {
         get_random_bytes(serial_key, 16);
     }
+    // if (protect_mode == 0) {
+    //     get_random_bytes(serial_key, 16);
+    // }
 
     // 外部加密
     if (encryption_algorithm == AES) {

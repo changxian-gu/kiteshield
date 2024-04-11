@@ -112,5 +112,4 @@ int ecc_decrypt(uint8_t *prvkey,uint8_t *in, uint32_t in_size, uint8_t *out, uin
     }
     *out_size = in_size;
     return *out_size;
-
 }
