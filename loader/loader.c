@@ -46,330 +46,313 @@ struct key_placeholder obfuscated_key
 // struct aes_key obfuscated_key __attribute__((aligned(1), section(".key")));
 
 static void *map_load_section_from_mem(void *elf_start, Elf64_Phdr phdr) {
-  uint64_t base_addr =
-      ((Elf64_Ehdr *)elf_start)->e_type == ET_DYN ? DYN_PROG_BASE_ADDR : 0;
+    uint64_t base_addr =
+        ((Elf64_Ehdr *)elf_start)->e_type == ET_DYN ? DYN_PROG_BASE_ADDR : 0;
 
-  /* Same rounding logic as in map_load_section_from_fd, see comment below.
-   * Note that we don't need a separate mmap here for bss if memsz > filesz
-   * as we map an anonymous region and copy into it rather than mapping from
-   * an fd (ie. we can just not touch the remaining space and it will be full
-   * of zeros by default).
-   */
-  void *addr = sys_mmap((void *)(base_addr + PAGE_ALIGN_DOWN(phdr.p_vaddr)),
-                        phdr.p_memsz + PAGE_OFFSET(phdr.p_vaddr), PROT_WRITE,
-                        MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-  DIE_IF((long)addr < 0, "mmap failure");
-  DEBUG_FMT("mapping LOAD section from packed binary at %p", addr);
+    /* Same rounding logic as in map_load_section_from_fd, see comment below.
+     * Note that we don't need a separate mmap here for bss if memsz > filesz
+     * as we map an anonymous region and copy into it rather than mapping from
+     * an fd (ie. we can just not touch the remaining space and it will be full
+     * of zeros by default).
+     */
+    // 存在疑问：为什么申请的长度这么长?
+    void *addr = sys_mmap((void *)(base_addr + PAGE_ALIGN_DOWN(phdr.p_vaddr)),
+                          phdr.p_memsz + PAGE_OFFSET(phdr.p_vaddr), PROT_WRITE,
+                          MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    DIE_IF((long)addr < 0, "mmap failure");
+    DEBUG_FMT("mapping LOAD section from packed binary at %p", addr);
 
-  /* Copy data from the packed binary */
-  char *curr_addr = addr;
-  for (Elf64_Off f_off = PAGE_ALIGN_DOWN(phdr.p_offset);
-       f_off < phdr.p_offset + phdr.p_filesz; f_off++) {
-    (*curr_addr++) = *((char *)elf_start + f_off);
-  }
+    /* Copy data from the packed binary */
+    char *curr_addr = addr;
+    for (Elf64_Off f_off = PAGE_ALIGN_DOWN(phdr.p_offset);
+         f_off < phdr.p_offset + phdr.p_filesz; f_off++) {
+        (*curr_addr++) = *((char *)elf_start + f_off);
+    }
 
-  /* Set correct permissions (change from -w-) */
-  int prot = (phdr.p_flags & PF_R ? PROT_READ : 0) |
-             (phdr.p_flags & PF_W ? PROT_WRITE : 0) |
-             (phdr.p_flags & PF_X ? PROT_EXEC : 0);
-  DIE_IF(sys_mprotect(addr, phdr.p_memsz + PAGE_OFFSET(phdr.p_vaddr), prot) < 0,
-         "mprotect error");
-  return addr;
+    /* Set correct permissions (change from -w-) */
+    int prot = (phdr.p_flags & PF_R ? PROT_READ : 0) |
+               (phdr.p_flags & PF_W ? PROT_WRITE : 0) |
+               (phdr.p_flags & PF_X ? PROT_EXEC : 0);
+    DIE_IF(
+        sys_mprotect(addr, phdr.p_memsz + PAGE_OFFSET(phdr.p_vaddr), prot) < 0,
+        "mprotect error");
+    return addr;
 }
 
 static void *map_load_section_from_fd(int fd, Elf64_Phdr phdr, int absolute) {
-  int prot = 0;
-  if (phdr.p_flags & PF_R)
-    prot |= PROT_READ;
-  if (phdr.p_flags & PF_W)
-    prot |= PROT_WRITE;
-  if (phdr.p_flags & PF_X)
-    prot |= PROT_EXEC;
+    int prot = 0;
+    if (phdr.p_flags & PF_R)
+        prot |= PROT_READ;
+    if (phdr.p_flags & PF_W)
+        prot |= PROT_WRITE;
+    if (phdr.p_flags & PF_X)
+        prot |= PROT_EXEC;
 
-  uint64_t base_addr = absolute ? 0 : DYN_INTERP_BASE_ADDR;
+    uint64_t base_addr = absolute ? 0 : DYN_INTERP_BASE_ADDR;
 
-  /* mmap requires that the addr and offset fields are multiples of the page
-   * size. Since that may not be the case for the p_vaddr and p_offset fields
-   * in an ELF binary, we have to do some math to ensure the passed in
-   * address/offset are multiples of the page size.
-   *
-   * To calculate the load address, we start at the interpreter base address
-   * (which is a multiple of the page size itself), and add p_vaddr rounded
-   * down to the nearest page size multiple. We round down the offset parameter
-   * to the nearest page size multiple in the same way. Since both the offset
-   * and virtual address are guaranteed to be congruent modulo the page size
-   * (as per the ELF standard), this will result in them both being rounded
-   * down by the same amount, and the produced mapping will be correct.
-   */
-  void *addr =
-      sys_mmap((void *)(base_addr + PAGE_ALIGN_DOWN(phdr.p_vaddr)),
-               phdr.p_filesz + PAGE_OFFSET(phdr.p_vaddr), prot,
-               MAP_PRIVATE | MAP_FIXED, fd, PAGE_ALIGN_DOWN(phdr.p_offset));
-  DIE_IF((long)addr < 0, "mmap failure while mapping load section from fd");
+    /* mmap requires that the addr and offset fields are multiples of the page
+     * size. Since that may not be the case for the p_vaddr and p_offset fields
+     * in an ELF binary, we have to do some math to ensure the passed in
+     * address/offset are multiples of the page size.
+     *
+     * To calculate the load address, we start at the interpreter base address
+     * (which is a multiple of the page size itself), and add p_vaddr rounded
+     * down to the nearest page size multiple. We round down the offset
+     * parameter to the nearest page size multiple in the same way. Since both
+     * the offset and virtual address are guaranteed to be congruent modulo the
+     * page size (as per the ELF standard), this will result in them both being
+     * rounded down by the same amount, and the produced mapping will be
+     * correct.
+     */
+    void *addr =
+        sys_mmap((void *)(base_addr + PAGE_ALIGN_DOWN(phdr.p_vaddr)),
+                 phdr.p_filesz + PAGE_OFFSET(phdr.p_vaddr), prot,
+                 MAP_PRIVATE | MAP_FIXED, fd, PAGE_ALIGN_DOWN(phdr.p_offset));
+    DIE_IF((long)addr < 0, "mmap failure while mapping load section from fd");
 
-  /* If p_memsz > p_filesz, the remaining space must be filled with zeros
-   * (Usually the .bss section), map extra anon pages if this is the case. */
-  if (phdr.p_memsz > phdr.p_filesz) {
-    /* Unless the segment mapped above falls perfectly on a page boundary,
-     * we've mapped some .bss already by virtue of the fact that mmap will
-     * round the size of our mapping up to a page boundary. Subtract that
-     * already mapped bss from the extra space we have to allocate */
+    /* If p_memsz > p_filesz, the remaining space must be filled with zeros
+     * (Usually the .bss section), map extra anon pages if this is the case. */
+    if (phdr.p_memsz > phdr.p_filesz) {
+        /* Unless the segment mapped above falls perfectly on a page boundary,
+         * we've mapped some .bss already by virtue of the fact that mmap will
+         * round the size of our mapping up to a page boundary. Subtract that
+         * already mapped bss from the extra space we have to allocate */
 
-    /* Page size minus amount of space occupied in the last page of the above
-     * mapping by the file */
-    size_t bss_already_mapped =
-        PAGE_SIZE - PAGE_OFFSET(phdr.p_vaddr + phdr.p_filesz);
-    void *extra_pages_start =
-        (void *)PAGE_ALIGN_UP(base_addr + phdr.p_vaddr + phdr.p_filesz);
+        /* Page size minus amount of space occupied in the last page of the
+         * above mapping by the file */
+        size_t bss_already_mapped =
+            PAGE_SIZE - PAGE_OFFSET(phdr.p_vaddr + phdr.p_filesz);
+        void *extra_pages_start =
+            (void *)PAGE_ALIGN_UP(base_addr + phdr.p_vaddr + phdr.p_filesz);
 
-    if (bss_already_mapped < (phdr.p_memsz - phdr.p_filesz)) {
-      size_t extra_space_needed =
-          (size_t)(phdr.p_memsz - phdr.p_filesz) - bss_already_mapped;
+        if (bss_already_mapped < (phdr.p_memsz - phdr.p_filesz)) {
+            size_t extra_space_needed =
+                (size_t)(phdr.p_memsz - phdr.p_filesz) - bss_already_mapped;
 
-      void *extra_space =
-          sys_mmap(extra_pages_start, extra_space_needed, prot,
-                   MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
+            void *extra_space =
+                sys_mmap(extra_pages_start, extra_space_needed, prot,
+                         MAP_PRIVATE | MAP_FIXED | MAP_ANONYMOUS, -1, 0);
 
-      DIE_IF((long)extra_space < 0,
-             "mmap failure while mapping extra space for static vars");
+            DIE_IF((long)extra_space < 0,
+                   "mmap failure while mapping extra space for static vars");
 
-      DEBUG_FMT("mapped extra space for static data (.bss) at %p len %u",
-                extra_space, extra_space_needed);
+            DEBUG_FMT("mapped extra space for static data (.bss) at %p len %u",
+                      extra_space, extra_space_needed);
+        }
+
+        /* While any extra pages mapped will be zeroed by default, this is not
+         * the case for the part of the original page corresponding to
+         * bss_already_mapped (it will contain junk from the file) so we zero it
+         * here.  */
+        uint8_t *bss_ptr =
+            (uint8_t *)(base_addr + phdr.p_vaddr + phdr.p_filesz);
+        if (!(prot & PROT_WRITE)) {
+            DIE_IF(sys_mprotect(bss_ptr, bss_already_mapped, PROT_WRITE) < 0,
+                   "mprotect error");
+        }
+
+        for (size_t i = 0; i < bss_already_mapped; i++) *(bss_ptr + i) = 0;
+
+        if (!(prot & PROT_WRITE)) {
+            DIE_IF(sys_mprotect(bss_ptr, bss_already_mapped, prot) < 0,
+                   "mprotect error");
+        }
     }
 
-    /* While any extra pages mapped will be zeroed by default, this is not the
-     * case for the part of the original page corresponding to
-     * bss_already_mapped (it will contain junk from the file) so we zero it
-     * here.  */
-    uint8_t *bss_ptr = (uint8_t *)(base_addr + phdr.p_vaddr + phdr.p_filesz);
-    if (!(prot & PROT_WRITE)) {
-      DIE_IF(sys_mprotect(bss_ptr, bss_already_mapped, PROT_WRITE) < 0,
-             "mprotect error");
-    }
-
-    for (size_t i = 0; i < bss_already_mapped; i++)
-      *(bss_ptr + i) = 0;
-
-    if (!(prot & PROT_WRITE)) {
-      DIE_IF(sys_mprotect(bss_ptr, bss_already_mapped, prot) < 0,
-             "mprotect error");
-    }
-  }
-
-  DEBUG_FMT("mapped LOAD section from fd at %p", addr);
-  return addr;
+    DEBUG_FMT("mapped LOAD section from fd at %p", addr);
+    return addr;
 }
 
 static void map_interp(void *path, void **entry, void **interp_base) {
-  DEBUG_FMT("mapping INTERP ELF at path %s", path);
-  int interp_fd = sys_open(path, O_RDONLY, 0);
-  DIE_IF(interp_fd < 0, "could not open interpreter binary");
+    DEBUG_FMT("mapping INTERP ELF at path %s", path);
+    int interp_fd = sys_open(path, O_RDONLY, 0);
+    DIE_IF(interp_fd < 0, "could not open interpreter binary");
 
-  Elf64_Ehdr ehdr;
-  DIE_IF(sys_read(interp_fd, &ehdr, sizeof(ehdr)) < 0,
-         "read failure while reading interpreter binary header");
+    Elf64_Ehdr ehdr;
+    DIE_IF(sys_read(interp_fd, &ehdr, sizeof(ehdr)) < 0,
+           "read failure while reading interpreter binary header");
 
-  *entry = ehdr.e_type == ET_EXEC
-               ? (void *)ehdr.e_entry
-               : (void *)(DYN_INTERP_BASE_ADDR + ehdr.e_entry);
-  int base_addr_set = 0;
-  for (int i = 0; i < ehdr.e_phnum; i++) {
-    Elf64_Phdr curr_phdr;
+    *entry = ehdr.e_type == ET_EXEC
+                 ? (void *)ehdr.e_entry
+                 : (void *)(DYN_INTERP_BASE_ADDR + ehdr.e_entry);
+    int base_addr_set = 0;
+    for (int i = 0; i < ehdr.e_phnum; i++) {
+        Elf64_Phdr curr_phdr;
 
-    off_t lseek_res =
-        sys_lseek(interp_fd, ehdr.e_phoff + i * sizeof(Elf64_Phdr), SEEK_SET);
-    DIE_IF(lseek_res < 0, "lseek failure while mapping interpreter");
+        off_t lseek_res = sys_lseek(
+            interp_fd, ehdr.e_phoff + i * sizeof(Elf64_Phdr), SEEK_SET);
+        DIE_IF(lseek_res < 0, "lseek failure while mapping interpreter");
 
-    size_t read_res = sys_read(interp_fd, &curr_phdr, sizeof(curr_phdr));
-    DIE_IF(read_res < 0, "read failure while mapping interpreter");
+        size_t read_res = sys_read(interp_fd, &curr_phdr, sizeof(curr_phdr));
+        DIE_IF(read_res < 0, "read failure while mapping interpreter");
 
-    /* We shouldn't be dealing with any non PT_LOAD segments here */
-    if (curr_phdr.p_type != PT_LOAD)
-      continue;
+        /* We shouldn't be dealing with any non PT_LOAD segments here */
+        if (curr_phdr.p_type != PT_LOAD)
+            continue;
 
-    void *addr =
-        map_load_section_from_fd(interp_fd, curr_phdr, ehdr.e_type == ET_EXEC);
+        void *addr = map_load_section_from_fd(interp_fd, curr_phdr,
+                                              ehdr.e_type == ET_EXEC);
 
-    if (!base_addr_set) {
-      DEBUG_FMT("interpreter base address is %p", addr);
-      *interp_base = addr;
-      base_addr_set = 1;
+        if (!base_addr_set) {
+            DEBUG_FMT("interpreter base address is %p", addr);
+            *interp_base = addr;
+            base_addr_set = 1;
+        }
     }
-  }
 
-  DIE_IF(sys_close(interp_fd) < 0, "could not close interpreter binary");
+    DIE_IF(sys_close(interp_fd) < 0, "could not close interpreter binary");
 }
 
 static void *map_elf_from_mem(void *elf_start, void **interp_entry,
                               void **interp_base) {
-  Elf64_Ehdr *ehdr = (Elf64_Ehdr *)elf_start;
+    Elf64_Ehdr *ehdr = (Elf64_Ehdr *)elf_start;
 
-  int load_addr_set = 0;
-  void *load_addr = NULL;
+    int load_addr_set = 0;
+    void *load_addr = NULL;
 
-  Elf64_Phdr *curr_phdr = elf_start + ehdr->e_phoff;
-  Elf64_Phdr *interp_hdr = NULL;
-  for (int i = 0; i < ehdr->e_phnum; i++) {
-    void *seg_addr = NULL;
+    Elf64_Phdr *curr_phdr = elf_start + ehdr->e_phoff;
+    Elf64_Phdr *interp_hdr = NULL;
+    // 遍历所有的program header
+    for (int i = 0; i < ehdr->e_phnum; i++) {
+        void *seg_addr = NULL;
 
-    if (curr_phdr->p_type == PT_LOAD)
-      seg_addr = map_load_section_from_mem(elf_start, *curr_phdr);
-    else if (curr_phdr->p_type == PT_INTERP)
-      interp_hdr = curr_phdr;
+        if (curr_phdr->p_type == PT_LOAD)
+            seg_addr = map_load_section_from_mem(elf_start, *curr_phdr);
+        else if (curr_phdr->p_type == PT_INTERP) {
+            interp_hdr = curr_phdr;
+        }
 
-    if (!load_addr_set && seg_addr != NULL) {
-      load_addr = seg_addr;
-      load_addr_set = 1;
+        if (!load_addr_set && seg_addr != NULL) {
+            load_addr = seg_addr;
+            load_addr_set = 1;
+        }
+
+        curr_phdr++;
     }
 
-    curr_phdr++;
-  }
+    if (interp_hdr) {
+        map_interp(elf_start + interp_hdr->p_offset, interp_entry, interp_base);
+    } else {
+        *interp_base = NULL;
+        *interp_entry = NULL;
+    }
 
-  if (interp_hdr) {
-    map_interp(elf_start + interp_hdr->p_offset, interp_entry, interp_base);
-  } else {
-    *interp_base = NULL;
-    *interp_entry = NULL;
-  }
-
-  return load_addr;
+    return load_addr;
 }
 
 static void replace_auxv_ent(unsigned long long *auxv_start,
                              unsigned long long label,
                              unsigned long long value) {
-  unsigned long long *curr_ent = auxv_start;
-  while (*curr_ent != label && *curr_ent != AT_NULL)
-    curr_ent += 2;
-  DIE_IF_FMT(*curr_ent == AT_NULL, "could not find auxv entry %d", label);
+    unsigned long long *curr_ent = auxv_start;
+    while (*curr_ent != label && *curr_ent != AT_NULL) curr_ent += 2;
+    DIE_IF_FMT(*curr_ent == AT_NULL, "could not find auxv entry %d", label);
 
-  *(++curr_ent) = value;
-  DEBUG_FMT("replaced auxv entry %llu with value %llu (0x%p)", label, value,
-            value);
+    *(++curr_ent) = value;
+    DEBUG_FMT("replaced auxv entry %llu with value %llu (0x%p)", label, value,
+              value);
 }
 
+// 设置辅助数组的值
 static void setup_auxv(void *argv_start, void *entry, void *phdr_addr,
                        void *interp_base, unsigned long long phnum) {
-  unsigned long long *auxv_start = argv_start;
+// 一个简单的宏定义，用来找到下一个NULL
+#define ADVANCE_PAST_NEXT_NULL(ptr) \
+    while (*(++ptr) != 0)           \
+        ;                           \
+    ptr++;
 
-#define ADVANCE_PAST_NEXT_NULL(ptr)                                            \
-  while (*(++ptr) != 0);                                                       \
-  ptr++;
+    unsigned long long *auxv_start = argv_start;
+    // 下面这两行干嘛去？？
+    // 运行完这个宏定义到了环境变量开始的地方
+    ADVANCE_PAST_NEXT_NULL(auxv_start) /* argv */
+    // 运行完这个宏定义到了环境变量结束的地方后一个
+    ADVANCE_PAST_NEXT_NULL(auxv_start) /* envp */
+    // 运行完之后指向auxiliary vector开始的地方
 
-  ADVANCE_PAST_NEXT_NULL(auxv_start) /* argv */
-  ADVANCE_PAST_NEXT_NULL(auxv_start) /* envp */
-
-  DEBUG_FMT("taking %p as auxv start", auxv_start);
-  replace_auxv_ent(auxv_start, AT_ENTRY, (unsigned long long)entry);
-  replace_auxv_ent(auxv_start, AT_PHDR, (unsigned long long)phdr_addr);
-  replace_auxv_ent(auxv_start, AT_BASE, (unsigned long long)interp_base);
-  replace_auxv_ent(auxv_start, AT_PHNUM, phnum);
+    DEBUG_FMT("taking %p as auxv start", auxv_start);
+    replace_auxv_ent(auxv_start, AT_ENTRY, (unsigned long long)entry);
+    replace_auxv_ent(auxv_start, AT_PHDR, (unsigned long long)phdr_addr);
+    replace_auxv_ent(auxv_start, AT_BASE, (unsigned long long)interp_base);
+    replace_auxv_ent(auxv_start, AT_PHNUM, phnum);
 }
 
-static void decrypt_packed_bin_aes(
-        void *packed_bin_start,
-        size_t packed_bin_size,
-        struct aes_key *key) {
-
-    DEBUG_FMT("AES decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p", packed_bin_start);
-
-    // DEBUG_FMT("open serial %d", serial_communication());
-    // 只解密密钥整数倍的长度的密文
-    unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct aes_key);
-    char* out = (char*)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d", *(char*)out);
+static void decrypt_packed_bin_aes(void *packed_bin_start,
+                                   size_t packed_bin_size,
+                                   struct aes_key *key) {
+    unsigned long t =
+        packed_bin_size - packed_bin_size % sizeof(struct aes_key);
+    DEBUG_FMT("实际解密长度：%d", t);
+    if (t == 0)
+        return;
+    char *out = (char *)ks_malloc(t);
     AesContext aes_context;
     aesInit(&aes_context, key->bytes, sizeof(struct aes_key));
-    ecbDecrypt(AES_CIPHER_ALGO, &aes_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d", *((char*)out));
+    int ret = ecbDecrypt(AES_CIPHER_ALGO, &aes_context, packed_bin_start, out, t);
     memcpy(packed_bin_start, out, t);
-    DEBUG_FMT("decrypt success %d", 1);
+    DEBUG_FMT("decrypt success %d", ret);
     ks_free(out);
 }
 
-static void decrypt_packed_bin_des(
-        void *packed_bin_start,
-        size_t packed_bin_size,
-        struct des_key *key) {
-
-    DEBUG_FMT("DES decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p", packed_bin_start);
-
-    // DEBUG_FMT("open serial %d", serial_communication());
-
-    unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct des_key);
-    char* out = (char*)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d", *(char*)out);
+static void decrypt_packed_bin_des(void *packed_bin_start,
+                                   size_t packed_bin_size,
+                                   struct des_key *key) {
+    unsigned long t =
+        packed_bin_size - packed_bin_size % sizeof(struct des_key);
+    DEBUG_FMT("实际解密长度：%d", t);
+    if (t == 0)
+        return;
+    char *out = (char *)ks_malloc(t * sizeof(char));
     DesContext des_context;
     desInit(&des_context, key->bytes, sizeof(struct des_key));
-    ecbDecrypt(DES_CIPHER_ALGO, &des_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d", *((char*)out));
+    int ret = ecbDecrypt(DES_CIPHER_ALGO, &des_context, packed_bin_start, out, t);
     memcpy(packed_bin_start, out, t);
-    DEBUG_FMT("decrypt success %d", 1);
+    DEBUG_FMT("decrypt success %d", ret);
     ks_free(out);
 }
 
-
-static void decrypt_packed_bin_des3(
-        void *packed_bin_start,
-        size_t packed_bin_size,
-        struct des3_key *key) {
-
-    DEBUG_FMT("DES3 decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p", packed_bin_start);
-
-    // DEBUG_FMT("open serial %d", serial_communication());
-
-    unsigned long t = packed_bin_size - packed_bin_size % sizeof(struct des3_key);
-    char* out = (char*)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d", *(char*)out);
+static void decrypt_packed_bin_des3(void *packed_bin_start,
+                                    size_t packed_bin_size,
+                                    struct des3_key *key) {
+    unsigned long t =
+        packed_bin_size - packed_bin_size % sizeof(struct des3_key);
+    DEBUG_FMT("实际解密长度：%d", t);
+    if (t == 0)
+        return;
+    char *out = (char *)ks_malloc(t * sizeof(char));
     Des3Context des3_context;
     des3Init(&des3_context, key->bytes, sizeof(struct des3_key));
-    ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d", *((char*)out));
+    int ret = ecbDecrypt(DES3_CIPHER_ALGO, &des3_context, packed_bin_start, out, t);
     memcpy(packed_bin_start, out, t);
-    DEBUG_FMT("decrypt success %d", 1);
+    DEBUG_FMT("decrypt success %d", ret);
     ks_free(out);
 }
 
-static void decrypt_packed_bin_rc4(
-        void *packed_bin_start,
-        size_t packed_bin_size,
-        struct rc4_key *key) {
-
-    DEBUG_FMT("RC4 decrypting binary with key %s", STRINGIFY_KEY(key));
-    DEBUG_FMT("the packed_bin_size : %u", packed_bin_size);
-    DEBUG_FMT("the address of packed_bin_start: %p", packed_bin_start);
-
-    // DEBUG_FMT("open serial %d", serial_communication());
-
+static void decrypt_packed_bin_rc4(void *packed_bin_start,
+                                   size_t packed_bin_size,
+                                   struct rc4_key *key) {
     unsigned long t = packed_bin_size;
-    char* out = (char*)ks_malloc(t * sizeof(char));
-    DEBUG_FMT("the val : %d", *(char*)out);
+    DEBUG_FMT("实际解密长度：%d", t);
+    if (t == 0)
+        return;
+    char *out = (char *)ks_malloc(t * sizeof(char));
     Rc4Context rc4_context;
     rc4Init(&rc4_context, key->bytes, sizeof(struct rc4_key));
     rc4Cipher(&rc4_context, packed_bin_start, out, t);
-    DEBUG_FMT("the val : %d", *((char*)out));
     memcpy(packed_bin_start, out, t);
     DEBUG_FMT("decrypt success %d", 1);
     ks_free(out);
 }
 
-void loader_outer_key_deobfuscate(
-        struct key_placeholder *old_key,
-        struct aes_key *new_key,
-        uint8_t* loader_bin,
-        size_t loader_bin_size) {
-
+/* Convenience wrapper around obf_deobf_outer_key to automatically pass in
+ * correct loader code offsets. */
+void loader_outer_key_deobfuscate(struct key_placeholder *old_key,
+                                  struct aes_key *new_key, uint8_t *loader_bin,
+                                  size_t loader_bin_size) {
     __builtin_memcpy(new_key, old_key, sizeof(*new_key));
 
-    #ifdef NO_ANTIDEBUG
+#ifdef NO_ANTIDEBUG
     return;
-    #endif
+#endif
 
     /* Skip the struct aes_key of course, we just want the code */
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
@@ -381,17 +364,15 @@ void loader_outer_key_deobfuscate(
     }
 }
 
-void loader_outer_key_deobfuscate_aes(
-        struct key_placeholder *old_key,
-        struct aes_key *new_key,
-        uint8_t* loader_bin,
-        size_t loader_bin_size) {
-
+void loader_outer_key_deobfuscate_aes(struct key_placeholder *old_key,
+                                      struct aes_key *new_key,
+                                      uint8_t *loader_bin,
+                                      size_t loader_bin_size) {
     __builtin_memcpy(new_key, old_key->bytes, sizeof(*new_key));
 
-    #ifdef NO_ANTIDEBUG
+#ifdef NO_ANTIDEBUG
     return;
-    #endif
+#endif
 
     /* Skip the struct aes_key of course, we just want the code */
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
@@ -403,17 +384,15 @@ void loader_outer_key_deobfuscate_aes(
     }
 }
 
-void loader_outer_key_deobfuscate_des(
-        struct key_placeholder *old_key,
-        struct des_key *new_key,
-        uint8_t* loader_bin,
-        size_t loader_bin_size) {
-
+void loader_outer_key_deobfuscate_des(struct key_placeholder *old_key,
+                                      struct des_key *new_key,
+                                      uint8_t *loader_bin,
+                                      size_t loader_bin_size) {
     __builtin_memcpy(new_key, old_key->bytes, sizeof(*new_key));
 
-    #ifdef NO_ANTIDEBUG
+#ifdef NO_ANTIDEBUG
     return;
-    #endif
+#endif
 
     /* Skip the struct des_key of course, we just want the code */
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
@@ -425,17 +404,15 @@ void loader_outer_key_deobfuscate_des(
     }
 }
 
-void loader_outer_key_deobfuscate_rc4(
-        struct key_placeholder *old_key,
-        struct rc4_key *new_key,
-        uint8_t* loader_bin,
-        size_t loader_bin_size) {
-
+void loader_outer_key_deobfuscate_rc4(struct key_placeholder *old_key,
+                                      struct rc4_key *new_key,
+                                      uint8_t *loader_bin,
+                                      size_t loader_bin_size) {
     __builtin_memcpy(new_key, old_key->bytes, sizeof(*new_key));
 
-    #ifdef NO_ANTIDEBUG
+#ifdef NO_ANTIDEBUG
     return;
-    #endif
+#endif
 
     /* Skip the struct rc4_key of course, we just want the code */
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
@@ -447,45 +424,23 @@ void loader_outer_key_deobfuscate_rc4(
     }
 }
 
-void loader_outer_key_deobfuscate_des3(
-        struct key_placeholder *old_key,
-        struct des3_key *new_key,
-        uint8_t* loader_bin,
-        size_t loader_bin_size) {
-
+void loader_outer_key_deobfuscate_des3(struct key_placeholder *old_key,
+                                       struct des3_key *new_key,
+                                       uint8_t *loader_bin,
+                                       size_t loader_bin_size) {
     __builtin_memcpy(new_key, old_key->bytes, sizeof(struct des3_key));
 
-    #ifdef NO_ANTIDEBUG
+#ifdef NO_ANTIDEBUG
     return;
-    #endif
+#endif
 
     /* Skip the struct des3_key of course, we just want the code */
     unsigned int loader_index = KEY_SIZE_AFTER_ALIGN;
     unsigned int key_index = 0;
-        new_key->bytes[key_index] ^= loader_bin[loader_index];
-        loader_index++;
-        key_index = (key_index + 1) % sizeof(struct des3_key);
+    new_key->bytes[key_index] ^= loader_bin[loader_index];
+    loader_index++;
+    key_index = (key_index + 1) % sizeof(struct des3_key);
 }
-
-// /* Convenience wrapper around obf_deobf_outer_key to automatically pass in
-//  * correct loader code offsets. */
-// void loader_outer_key_deobfuscate(struct rc4_key *old_key,
-//                                   struct rc4_key *new_key) {
-//   /* "our" EHDR (ie. the one in the on-disk binary that was run) */
-//   Elf64_Ehdr *us_ehdr = (Elf64_Ehdr *)LOADER_ADDR;
-
-//   /* The PHDR in our binary corresponding to the loader (ie. this code) */
-//   Elf64_Phdr *loader_phdr = (Elf64_Phdr *)(LOADER_ADDR + us_ehdr->e_phoff);
-
-//   /* The first ELF segment (loader code) includes the ehdr and two phdrs,
-//    * adjust loader code start and size accordingly */
-//   size_t hdr_adjust = sizeof(Elf64_Ehdr) + (2 * sizeof(Elf64_Phdr));
-
-//   void *loader_start = (void *)loader_phdr->p_vaddr + hdr_adjust;
-//   size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
-
-//   obf_deobf_outer_key(old_key, new_key, loader_start, loader_size);
-// }
 
 int hexToDec(char c) {
     if (c >= '0' && c <= '9')
@@ -497,10 +452,9 @@ int hexToDec(char c) {
     }
 }
 
-void printBytes1(const char* msg, unsigned long len) {
+void printBytes1(const char *msg, unsigned long len) {
     for (int i = 0; i < len; i++) {
-        ks_printf(1, "0x%x(", (unsigned char)(msg[i]));
-        ks_printf(1, "%d) ", (unsigned char)(msg[i]));
+        ks_printf(1, "%x ", (unsigned char)(msg[i]));
     }
     ks_printf(1, "%s", "\n");
 }
@@ -540,13 +494,10 @@ static int get_key(void *buf, size_t len) {
 static void encrypt_memory_range_aes(struct aes_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct aes_key);
-    DEBUG_FMT("aes key_len : %d", key_len);
     unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
-    DEBUG_FMT("before enc, len : %d", len);
     // 使用DES加密后密文长度可能会大于明文长度怎么办?
     // 目前解决方案，保证加密align倍数的明文长度，有可能会剩下一部分字节，不做处理
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : %d", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     AesContext aes_context;
@@ -559,11 +510,8 @@ static void encrypt_memory_range_aes(struct aes_key *key, void *start,
 static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct rc4_key);
-    DEBUG_FMT("rc4 key_len : %d", key_len);
     unsigned char *out = (unsigned char *)ks_malloc((len) * sizeof(char));
-    DEBUG_FMT("before enc, len : d", len);
     unsigned long actual_encrypt_len = len;
-    DEBUG_FMT("actual encrypt len : d", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     Rc4Context rc4_context;
@@ -576,11 +524,8 @@ static void encrypt_memory_range_rc4(struct rc4_key *key, void *start,
 static void encrypt_memory_range_des(struct des_key *key, void *start,
                                      size_t len) {
     size_t key_len = sizeof(struct des_key);
-    DEBUG_FMT("des key_len : %d", key_len);
     unsigned char *out = (unsigned char *)ks_malloc(len);
-    DEBUG_FMT("before enc, len : d", len);
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : d", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     DesContext des_context;
@@ -593,11 +538,8 @@ static void encrypt_memory_range_des(struct des_key *key, void *start,
 static void encrypt_memory_range_des3(struct des3_key *key, void *start,
                                       size_t len) {
     size_t key_len = sizeof(struct des3_key);
-    DEBUG_FMT("des3 key_len : %d", key_len);
     unsigned char *out = (unsigned char *)ks_malloc(len);
-    DEBUG_FMT("before enc, len : d", len);
     unsigned long actual_encrypt_len = len - len % key_len;
-    DEBUG_FMT("actual encrypt len : d", actual_encrypt_len);
     if (actual_encrypt_len == 0)
         return;
     Des3Context des3_context;
@@ -606,17 +548,19 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
     memcpy(start, out, actual_encrypt_len);
     des3Deinit(&des3_context);
 }
+
+/* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
     char* prog_name = obfuscated_key.name;
     // 拷贝一个临时文件
     char rand_tmp_filename[25] = "/tmp/kt_tmp_file";
-    DEBUG_FMT("%s", rand_tmp_filename);
+    // DEBUG_FMT("%s", rand_tmp_filename);
 
     int pid = sys_fork();
     int wstatus;
     if (pid == 0) {
         const char *shell = "/bin/sh";
-        char true_shell[200] = "/bin/cp ";
+        char true_shell[200] = "/bin/cp -f ";
         int s_idx = strlen(true_shell);
         strncpy(true_shell + s_idx, prog_name, strlen(prog_name));
         s_idx += strlen(prog_name);
@@ -633,6 +577,7 @@ void *load(void *entry_stacktop) {
 
     
     ks_malloc_init();
+    // 反调试功能, 具体怎么反调试的?
     if (antidebug_proc_check_traced() == 1) {
         DEBUG("检测到调试器，正在退出...");
         return 0;
@@ -664,7 +609,6 @@ void *load(void *entry_stacktop) {
     Elf64_Ehdr *packed_bin_ehdr = (Elf64_Ehdr *)(packed_bin_phdr->p_vaddr);
     // 去掉辅助变量的位置，为后面解密与解压提供正确的文件大小
     packed_bin_phdr->p_filesz -= PROGRAM_AUX_LEN;
-    // DEBUG_FMT("obkey %s", STRINGIFY_KEY(&obfuscated_key));
 
     unsigned char swap_infos[SERIAL_SIZE] = {0};
     unsigned char old_puf_key[SERIAL_SIZE] = {0};
@@ -744,14 +688,21 @@ void *load(void *entry_stacktop) {
         char *device = "/dev/ttyUSB0";
         usb_fd = open_serial_port(device);
         if (usb_fd <= 0)
-            return 0;
+		    return 0;
         // 发送之前初始化
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
-
-        send(&snd_data);
-        receive(&rec_data);
+        int ret = send(&snd_data);
+        if (ret == -1) {
+            DEBUG("send error");
+            return 0;
+        }
+        ret = receive(&rec_data);
+        if (ret == -1) {
+            DEBUG("receive error, exiting...");
+            return 0;
+        }
         get_serial_key(serial_key, &rec_data);
     } else {
         memcpy(serial_key, old_puf_key, 16);
@@ -764,44 +715,38 @@ void *load(void *entry_stacktop) {
     size_t loader_size = loader_phdr->p_memsz - hdr_adjust;
 
     if (encryption_algorithm == AES) {
-        DEBUG("[LOADER] Using AES Decrypting...");
+        DEBUG("Using AES Decrypting...");
         // 拿到AES的真实KEY
         struct aes_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
-        DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_aes((void *)packed_bin_phdr->p_vaddr,
                                packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == DES) {
-        DEBUG("[LOADER] Using DES Decrypting...");
+        DEBUG("Using DES Decrypting...");
         struct des_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
-        DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_des((void *)packed_bin_phdr->p_vaddr,
                                packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == RC4) {
-        DEBUG("[LOADER] Using RC4 Decrypting...");
+        DEBUG("Using RC4 Decrypting...");
         struct rc4_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
-        // loader_outer_key_deobfuscate_rc4(&obfuscated_key, &actual_key,
-        // loader_start, loader_size);
-        DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_rc4((void *)packed_bin_phdr->p_vaddr,
                                packed_bin_phdr->p_filesz, &actual_key);
     } else if (encryption_algorithm == TDEA) {
-        DEBUG("[LOADER] Using TDEA Decrypting...");
+        DEBUG("Using TDEA Decrypting...");
         struct des3_key actual_key;
         get_key(actual_key.bytes, sizeof(actual_key.bytes));
-        DEBUG_FMT("realkey %s", STRINGIFY_KEY(&actual_key));
         decrypt_packed_bin_des3((void *)packed_bin_phdr->p_vaddr,
                                 packed_bin_phdr->p_filesz, &actual_key);
     }
-    DEBUG("[LOADER] decrypt sucessfully");
+    DEBUG("Full decrypt sucessfully");
     // 把解密后的内容复制一份
     uint8_t* bin_new = ks_malloc(packed_bin_phdr->p_filesz);
     memcpy(bin_new, packed_bin_phdr->p_vaddr, packed_bin_phdr->p_filesz);
 
     if (compression_algorithm == ZSTD) {
-        DEBUG("[LOADER] Using ZSTD Decompressing...");
+        DEBUG("Using ZSTD uncompressing...");
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
@@ -812,8 +757,9 @@ void *load(void *entry_stacktop) {
                                            compressedBlob, compressedSize);
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
+        DEBUG("ZSTD FINISHED");
     } else if (compression_algorithm == LZO) {
-        DEBUG("[LOADER] Using LZO Decompressing...");
+        DEBUG("Using LZO uncompressing...");
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
@@ -823,14 +769,15 @@ void *load(void *entry_stacktop) {
         int ret = lzo1x_decompress(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
         if (ret != 0) {
-            DEBUG_FMT("[decompression]: something wrong!");
+            DEBUG("[decompression]: something wrong!");
+            return 0;
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
         ks_free(decompressedBlob);
         DEBUG("LZO FINISHED");
     } else if (compression_algorithm == LZMA) {
-        DEBUG("[LOADER] Using LZMA Decompressing...");
+        DEBUG("Using LZMA uncompressing...");
         // lzma decompression
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
@@ -840,13 +787,15 @@ void *load(void *entry_stacktop) {
         uint8_t *decompressedBlob =
             lzmaDecompress(compressedBlob, compressedSize, &decompressedSize);
         if (!decompressedBlob) {
-            DEBUG("Nope, we screwed it (part 2)");
-            return;
+            DEBUG("Nope, we screwed it (part 2)\n");
+            return 0;
         }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
+
+        DEBUG("LZMA FINISHED");
     } else if (compression_algorithm == UCL) {
-        DEBUG("[LOADER] Using UCL Decompressing...");
+        DEBUG("Using UCL uncompressing...");
         uint8_t *compressedBlob = packed_bin_phdr->p_vaddr;
         uint32_t compressedSize = packed_bin_phdr->p_filesz;
         uint32_t decompressedSize = packed_bin_phdr->p_memsz;
@@ -854,11 +803,15 @@ void *load(void *entry_stacktop) {
         int r =
             ucl_nrv2b_decompress_8(compressedBlob, compressedSize,
                                    decompressedBlob, &decompressedSize, NULL);
-        if (r != UCL_E_OK)
-            DEBUG("UCL DECOMPRESS ERROR!!!");
+        if (r != UCL_E_OK) {
+            DEBUG("UCL DECOMPRESS ERROR!!!\n");
+            return 0;
+        }
         memcpy((void *)packed_bin_phdr->p_vaddr, decompressedBlob,
                decompressedSize);
+        DEBUG("UCL FINISHED");
     }
+
     if (obfuscated_key.pub_encryption == RSA) {
         DEBUG("Using RSA decrypting...");
         // 解析出Rsa私钥，并对对称密钥解密
@@ -876,7 +829,10 @@ void *load(void *entry_stacktop) {
         char* cipher = obfuscated_key.bytes;
         int cipher_len = 128;
         error_t error = rsaesPkcs1v15Decrypt(&private_key, cipher, cipher_len, output, 128, &message_len);
-        DEBUG_FMT("decrypt error:%d", error);
+        if (error != 0) {
+            DEBUG_FMT("decrypt error:%d", error);
+            return 0;
+        }
         memcpy(obfuscated_key.bytes, output,message_len);
     } else if (obfuscated_key.pub_encryption == ECC) {
         DEBUG("Using ECC decrypting...");
@@ -890,38 +846,33 @@ void *load(void *entry_stacktop) {
     // text start, text len, data start, data len
     // 段解密
     if (encryption_algorithm == AES) {
-        DEBUG("[LOADER] Using AES Decrypting sections...");
-        // 拿到AES的真实KEY
+        DEBUG("Using AES Decrypting sections...");
         struct aes_key actual_key;
         memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
-        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
         decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + sections[0]),
                                sections[1], &actual_key);
         decrypt_packed_bin_aes((void *)(packed_bin_phdr->p_vaddr + sections[2]),
                                sections[3], &actual_key);
     } else if (encryption_algorithm == DES) {
-        DEBUG("[LOADER] Using DES Decrypting sections...");
+        DEBUG("Using DES Decrypting sections...");
         struct des_key actual_key;
         memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
-        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
         decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + sections[0]),
                                sections[1], &actual_key);
         decrypt_packed_bin_des((void *)(packed_bin_phdr->p_vaddr + sections[2]),
                                sections[3], &actual_key);
     } else if (encryption_algorithm == RC4) {
-        DEBUG("[LOADER] Using RC4 Decrypting sections...");
+        DEBUG("Using RC4 Decrypting sections...");
         struct rc4_key actual_key;
         memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
-        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
         decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + sections[0]),
                                sections[1], &actual_key);
         decrypt_packed_bin_rc4((void *)(packed_bin_phdr->p_vaddr + sections[2]),
                                sections[3], &actual_key);
     } else if (encryption_algorithm == TDEA) {
-        DEBUG("[LOADER] Using TDEA Decrypting sections...");
+        DEBUG("Using TDEA Decrypting sections...");
         struct des3_key actual_key;
         memcpy(actual_key.bytes, obfuscated_key.bytes, sizeof(actual_key.bytes));     
-        // get_key(actual_key.bytes, sizeof(actual_key.bytes));
         decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + sections[0]),
                                 sections[1], &actual_key);
         decrypt_packed_bin_des3((void *)(packed_bin_phdr->p_vaddr + sections[2]),
@@ -932,21 +883,28 @@ void *load(void *entry_stacktop) {
         持久化---begin
         方案：只改变外部加密所用的密钥，外部解密后使用新的密钥进行加密
     */
-    if (protect_mode == 1) {
-        // 与PUF通信获取密钥
-        uint8_t rand[32];
-        get_random_bytes(rand, 32);
-        snd_data_init(&snd_data, rand);
-        snd_data.ser_fd = usb_fd;
-        rec_data.ser_fd = usb_fd;
-        send(&snd_data);
-        int cnt = receive(&rec_data);
-        if (cnt == 0)
-            return 0;
-        sys_close(usb_fd);
-        // 从PUF通信拿到的数据初始化key
-        get_serial_key(serial_key, &rec_data);
-    } else {
+    // if (protect_mode == 1) {
+    //     // 与PUF通信获取密钥
+    //     uint8_t rand[32];
+    //     get_random_bytes(rand, 32);
+    //     snd_data_init(&snd_data, rand);
+    //     snd_data.ser_fd = usb_fd;
+    //     rec_data.ser_fd = usb_fd;
+    //     int ret = send(&snd_data);
+    //     if (ret == -1) {
+    //         DEBUG("send error");
+    //         return 0;
+    //     }
+    //     int cnt = receive(&rec_data);
+    //     if (cnt == 0)
+    //         return 0;
+    //     sys_close(usb_fd);
+    //     // 从PUF通信拿到的数据初始化key
+    //     get_serial_key(serial_key, &rec_data);
+    // } else {
+    //     get_random_bytes(serial_key, 16);
+    // }
+    if (protect_mode == 0) {
         get_random_bytes(serial_key, 16);
     }
 
@@ -955,28 +913,24 @@ void *load(void *entry_stacktop) {
         DEBUG("[Packer] Using AES...");
         struct aes_key key;
         get_key(key.bytes, sizeof(key.bytes));
-        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
         /* Encrypt the actual binary */
         encrypt_memory_range_aes(&key, bin_new, packed_bin_phdr->p_filesz);
     } else if (encryption_algorithm == DES) {
         DEBUG("[Packer] Using DES...");
         struct des_key key;
         get_key(key.bytes, sizeof(key.bytes));
-        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
         /* Encrypt the actual binary */
         encrypt_memory_range_des(&key, bin_new, packed_bin_phdr->p_filesz);
     } else if (encryption_algorithm == RC4) {
         DEBUG("[Packer] Using RC4...");
         struct rc4_key key;
         get_key(key.bytes, sizeof(key.bytes));
-        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
         /* Encrypt the actual binary */
         encrypt_memory_range_rc4(&key, bin_new, packed_bin_phdr->p_filesz);
     } else if (encryption_algorithm == TDEA) {
         DEBUG("[Packer] Using TDEA...");
         struct des3_key key;
         get_key(key.bytes, sizeof(key.bytes));
-        DEBUG_FMT("applying outer encryption with key %s", STRINGIFY_KEY(&key));
         /* Encrypt the actual binary */
         encrypt_memory_range_des3(&key, bin_new, packed_bin_phdr->p_filesz);
     }
@@ -999,7 +953,7 @@ void *load(void *entry_stacktop) {
 
     pid = sys_fork();
     if (pid == 0) {
-        char true_shell[200] = "/bin/mv ";
+        char true_shell[200] = "/bin/mv -f ";
         int s_idx = strlen(true_shell);
         strncpy(true_shell + s_idx, rand_tmp_filename, strlen(rand_tmp_filename));
         s_idx += strlen(rand_tmp_filename);

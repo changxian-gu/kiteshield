@@ -1,3 +1,4 @@
+#define USE_RUNTIME
 #ifdef USE_RUNTIME
 
 #include "common/include/defs.h"
@@ -97,10 +98,12 @@ struct thread_list {
   size_t size;
   struct thread *head;
 };
+
 struct iov{
     struct user_regs_struct * regs;
-    unsigned long int base;
+    unsigned long int len;
 };
+
 struct trap_point *get_tp(uint64_t addr) {
   struct trap_point *arr = (struct trap_point *)rt_info.data;
   for (int i = 0; i < rt_info.ntraps; i++) {
@@ -130,13 +133,20 @@ static void set_bytes_at_addr(pid_t tid, uint64_t addr, uint64_t value) {
 }
 
 static void set_int3_at_addr(pid_t tid, uint64_t addr) {
-  long word;
+  long word = INT3;
   long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)addr, &word);
   DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
+  printBytes1(&word, 8);
 
-  word &= (~0) << 4;
-  word |= INT3;
-  set_bytes_at_addr(tid, addr, word);
+  word = INT3;
+
+  // word &= (~0) << 4;
+  // word |= INT3;
+  set_bytes_at_addr(tid, addr, (void *)word);
+
+  res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)addr, &word);
+  DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
+  printBytes1(&word, 8);
 }
 
 static void single_step(pid_t tid) {
@@ -271,13 +281,12 @@ static void stop_threads_in_same_as(struct thread *thread,
 
 static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
   DEBUG("start handle fcn entry");
-  DIE_IF(antidebug_proc_check_traced(), TRACED_MSG);
+  // DIE_IF(antidebug_proc_check_traced(), TRACED_MSG);
   struct function *fcn = FCN_FROM_TP(tp);
 
   if (FCN_REFCNT(thread, fcn) == 0) {
     DEBUG_FMT("tid %d: entering encrypted function %s decrypting with key %s",
               thread->tid, fcn->name, STRINGIFY_KEY(&fcn->key));
-
     rc4_xor_fcn(thread->tid, fcn);
   } else {
     /* This thread hit the trap point for entrance to this function, but an
@@ -289,15 +298,21 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
 
   set_bytes_at_addr(thread->tid, tp->addr, tp->value);
 
-  single_step(thread->tid);
-
   struct user_regs_struct regs;
   struct iov iov;
   iov.regs = &regs;
-  iov.base = sizeof(struct user_regs_struct);
-  sys_ptrace(PTRACE_GETREGSET, thread->tid,(void *) 1, &iov);
+  iov.len = sizeof(struct user_regs_struct);
+  sys_ptrace(PTRACE_GETREGSET, thread->tid, 1, &iov);
+  DEBUG_FMT("before single step, pc is %p", regs.pc);
+  
 
-  set_int3_at_addr(thread->tid, tp->addr);
+  single_step(thread->tid);
+
+  sys_ptrace(PTRACE_GETREGSET, thread->tid, 1, &iov);
+  // DEBUG_FMT("after single step, pc is %p", regs.pc);
+  // DEBUG("before set int3");
+  // set_int3_at_addr(thread->tid, tp->addr);
+  // DEBUG("after set int3");
 
   FCN_ENTER(thread, fcn);
 }
@@ -315,7 +330,7 @@ static void handle_fcn_exit(struct thread *thread, struct thread_list *tlist,
   struct user_regs_struct regs;
   struct iov iov;
   iov.regs = &regs;
-  iov.base = sizeof(struct user_regs_struct);
+  iov.len = sizeof(struct user_regs_struct);
   long res = sys_ptrace(PTRACE_GETREGSET, thread->tid,(void *) 1, &iov);
   DIE_IF_FMT(res < 0, "PTRACE_GETREGS failed with error %d", res);
   struct function *prev_fcn = FCN_FROM_TP(tp);
@@ -407,18 +422,16 @@ static void handle_trap(struct thread *thread, struct thread_list *tlist,
   stop_threads_in_same_as(thread, tlist);
   struct iov iov;
   iov.regs = &regs;
-  iov.base = sizeof(struct user_regs_struct);
+  iov.len = sizeof(struct user_regs_struct);
   res = sys_ptrace(PTRACE_GETREGSET, thread->tid,(void *) 1, &iov);
   DIE_IF_FMT(res < 0, "PTRACE_GETREGS failed with error %d", res);
+  DEBUG_FMT("reg.pc is %p", iov.regs->pc);
 
   struct trap_point *tp = get_tp(iov.regs->pc);
   if (!tp) {
     DIE_FMT("tid %d: trapped at %p but we don't have an entry", thread->tid,
             iov.regs->pc);
   }
-
-  // res = sys_ptrace(PTRACE_SETREGSET, thread->tid, (void *)1, &iov);
-  // DIE_IF_FMT(res < 0, "PTRACE_SETREGS failed with error %d", res);
 
   if (tp->type == TP_FCN_ENTRY) {
     DEBUG("prepare handle fcn entry");
@@ -569,7 +582,7 @@ static void handle_new_thread(pid_t tid, struct thread *orig_thread,
   struct user_regs_struct regs;
   struct iov iov;
   iov.regs = &regs;
-  iov.base = sizeof(struct user_regs_struct);
+  iov.len = sizeof(struct user_regs_struct);
   ret = sys_ptrace(PTRACE_GETREGSET, new_thread->tid,(void *) 1, &iov);
   DIE_IF_FMT(ret < 0, "PTRACE_GETREGS failed with error %d", ret);
   int has_clone_vm = iov.regs->regs[2] & CLONE_VM;
@@ -827,7 +840,8 @@ void runtime_start(pid_t child_pid) {
                                             : "ent";
     DEBUG_FMT("%p value: %p, type: %s, function: %s (#%d)", tp->addr,
               tp->value, type, FCN_FROM_TP(tp)->name, FCN_FROM_TP(tp)->id);
-
+    printBytes1(&(tp->value), 8);
+  
   }
 #endif
 
@@ -836,12 +850,12 @@ void runtime_start(pid_t child_pid) {
   /* debugger checks are scattered throughout the runtime to interfere with
    * debugger attaches as much as possible.
    */
-  DIE_IF(antidebug_proc_check_traced(), TRACED_MSG);
+  // DIE_IF(antidebug_proc_check_traced(), TRACED_MSG);
 
   /* Do the prctl down here so a reverse engineer will have to defeat the
    * preceeding antidebug_proc_check_traced() call before prctl shows up in a
    * strace */
-  antidebug_prctl_set_nondumpable();
+  // antidebug_prctl_set_nondumpable();
 
   struct thread_list tlist;
   tlist.size = 0;
@@ -859,19 +873,19 @@ void runtime_start(pid_t child_pid) {
                "(runtime bug) tid %d trapped but we don't have a record of it",
                pid);
 
-    // if ((PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_FORK) ||
-    //      PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_VFORK) ||
-    //      PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_CLONE))) {
-    //   /* Trap due to new thread */
-    //   handle_new_thread(pid, thread, wstatus, &tlist);
-    //   continue;
-    // }
+    if ((PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_FORK) ||
+         PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_VFORK) ||
+         PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_CLONE))) {
+      /* Trap due to new thread */
+      handle_new_thread(pid, thread, wstatus, &tlist);
+      continue;
+    }
 
-    // if (PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_EXEC)) {
-    //   /* Trap due to exec */
-    //   handle_exec(thread, &tlist);
-    //   continue;
-    // }
+    if (PTRACE_EVENT_PRESENT(wstatus, PTRACE_EVENT_EXEC)) {
+      /* Trap due to exec */
+      handle_exec(thread, &tlist);
+      continue;
+    }
 
     /* destroy_thread (which is called by handle_thread_exit) requires that the
      * thread not yet have exited as it may need to re-encrypt functions in the

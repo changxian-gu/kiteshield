@@ -363,7 +363,10 @@ static int process_func(struct mapped_elf *elf, Elf64_Sym *func_sym,
 
   encrypt_memory_range(&fcn->key, func_start, func_sym->st_size);
 
+  printBytes(&(tp->value), 8);
+  printBytes(func_start, 8);
   *func_start = INT3;
+  printBytes(func_start, 8);
   printf("[debug] func start is %08lx\n", *func_start);
 
   rt_info->nfuncs++;
@@ -379,9 +382,6 @@ static int apply_inner_encryption(struct mapped_elf *elf,
                                   struct runtime_info **rt_info) {
   info("applying inner encryption");
 
-  /**
-   * 如果section的偏移为0，符号表为空，则无法加密内部加密
-   */
   if (elf->ehdr->e_shoff == 0 || !elf->symtab) {
     info("binary is stripped, not applying inner encryption");
     return -1;
@@ -489,7 +489,6 @@ static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
         printf("[Packer] Using AES...\n");
         struct aes_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_aes(&key, (void *)(elf->start + rand[0]), rand[1]);
         encrypt_memory_range_aes(&key, (void *)(elf->start + rand[2]), rand[3]);
@@ -497,7 +496,6 @@ static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
         printf("[Packer] Using DES...\n");
         struct des_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_des(&key, (void *)(elf->start + rand[0]), rand[1]);
         encrypt_memory_range_des(&key, (void *)(elf->start + rand[2]), rand[3]);
@@ -505,7 +503,6 @@ static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
         printf("[Packer] Using RC4...\n");
         struct rc4_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_rc4(&key, (void *)(elf->start + rand[0]), rand[1]);
         encrypt_memory_range_rc4(&key, (void *)(elf->start + rand[2]), rand[3]);
@@ -513,7 +510,6 @@ static int apply_sections_encryption(struct mapped_elf *elf, uint64_t rand[]) {
         printf("[Packer] Using TDEA...\n");
         struct des3_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_des3(&key, (void *)(elf->start + rand[0]),
                                   rand[1]);
@@ -535,13 +531,11 @@ static int apply_outer_encryption(
         printf("[Packer] Using AES...\n");
         struct aes_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_aes(&key, elf->start, elf->size);
         /* Obfuscate Key */
         struct aes_key obfuscated_key;
         obf_deobf_outer_key_aes(&key, &obfuscated_key, loader_start, loader_size);
-        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
         // 把混淆后的key写入loader
         struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
         memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
@@ -552,13 +546,11 @@ static int apply_outer_encryption(
         printf("[Packer] Using DES...\n");
         struct des_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         encrypt_memory_range_des(&key, elf->start, elf->size);
         /* Obfuscate Key */
         struct des_key obfuscated_key;
         obf_deobf_outer_key_des(&key, &obfuscated_key, loader_start, loader_size);
-        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
         // 把混淆后的key写入loader
         struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
         memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
@@ -569,14 +561,12 @@ static int apply_outer_encryption(
         printf("[Packer] Using RC4...\n");
         struct rc4_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         // 修改elf长度
         encrypt_memory_range_rc4(&key, elf->start, elf->size);
         /* Obfuscate Key */
         struct rc4_key obfuscated_key;
         obf_deobf_outer_key_rc4(&key, &obfuscated_key, loader_start, loader_size);
-        info("obfuscated_key %s", STRINGIFY_KEY(obfuscated_key));
         // 把混淆后的key写入loader
         struct key_placeholder m_key_placeholder = *(struct key_placeholder*)loader_start;
         memset(m_key_placeholder.bytes, 0, sizeof(m_key_placeholder.bytes));
@@ -587,7 +577,6 @@ static int apply_outer_encryption(
         printf("[Packer] Using TDEA...\n");
         struct des3_key key;
         CK_NEQ_PERROR(get_key_from_serial(key.bytes, sizeof(key.bytes)), -1);
-        info("applying outer encryption with key %s", STRINGIFY_KEY(key));
         /* Encrypt the actual binary */
         // 修改elf长度
         encrypt_memory_range_des3(&key, elf->start, elf->size);
@@ -821,9 +810,10 @@ int hexStringToByteArray(const char *hexString, unsigned char *byteArray, int by
 
     return count; // 返回转换的字节数
 }
+
 int main(int argc, char *argv[]) {
     char *input_path, *output_path;
-    int layer_one_only = 1;
+    int layer_one_only = 0;
     int c;
     int ret;
     const char* puf_path;
