@@ -133,20 +133,14 @@ static void set_bytes_at_addr(pid_t tid, uint64_t addr, uint64_t value) {
 }
 
 static void set_int3_at_addr(pid_t tid, uint64_t addr) {
-  long word = INT3;
+  long word;
   long res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)addr, &word);
   DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
-  printBytes1(&word, 8);
 
-  word = INT3;
+  word &= (~0UL) << 32;
+  word |= INT3;
 
-  // word &= (~0) << 4;
-  // word |= INT3;
   set_bytes_at_addr(tid, addr, (void *)word);
-
-  res = sys_ptrace(PTRACE_PEEKTEXT, tid, (void *)addr, &word);
-  DIE_IF_FMT(res != 0, "PTRACE_PEEKTEXT failed with error %d", res);
-  printBytes1(&word, 8);
 }
 
 static void single_step(pid_t tid) {
@@ -309,10 +303,10 @@ static void handle_fcn_entry(struct thread *thread, struct trap_point *tp) {
   single_step(thread->tid);
 
   sys_ptrace(PTRACE_GETREGSET, thread->tid, 1, &iov);
-  // DEBUG_FMT("after single step, pc is %p", regs.pc);
-  // DEBUG("before set int3");
-  // set_int3_at_addr(thread->tid, tp->addr);
-  // DEBUG("after set int3");
+  DEBUG_FMT("after single step, pc is %p", regs.pc);
+  DEBUG("before set int3");
+  set_int3_at_addr(thread->tid, tp->addr);
+  DEBUG("after set int3");
 
   FCN_ENTER(thread, fcn);
 }
@@ -801,7 +795,7 @@ static void handle_thread_exit(struct thread *thread,
     DEBUG("not tg leader");
     pid_t res = sys_wait4(tid, &wstatus, __WALL);
 
-    DEBUG_FMT("wstatus %d\n", wstatus);
+    DEBUG_FMT("wstatus %d", wstatus);
 
     DIE_IF_FMT(res < 0, "wait4 syscall failed with error %d", res);
 
@@ -815,7 +809,7 @@ static void handle_thread_exit(struct thread *thread,
     pid_t res = sys_wait4(tgid, &wstatus, __WALL);
     DIE_IF_FMT(res < 0, "wait4 syscall failed with error %d", res);
 
-    DEBUG_FMT("wstatus %d\n", wstatus);
+    DEBUG_FMT("wstatus %d", wstatus);
 
     DIE_IF_FMT(!WIFEXITED(wstatus), "tid %d expected to exit but did not", tgid);
     DEBUG_FMT("tid %d: exited with status %d", tgid, WEXITSTATUS(wstatus));

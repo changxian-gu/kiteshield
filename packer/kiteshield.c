@@ -363,10 +363,7 @@ static int process_func(struct mapped_elf *elf, Elf64_Sym *func_sym,
 
   encrypt_memory_range(&fcn->key, func_start, func_sym->st_size);
 
-  printBytes(&(tp->value), 8);
-  printBytes(func_start, 8);
   *func_start = INT3;
-  printBytes(func_start, 8);
   printf("[debug] func start is %08lx\n", *func_start);
 
   rt_info->nfuncs++;
