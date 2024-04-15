@@ -55,7 +55,31 @@ int receive(ser_data* rec)
     } else {
         DEBUG_FMT("receive error, not enough bytes: %d", total_bytes_read);
     }
+
+    if (verify(rec) == -1) {
+        DEBUG("PUF receive wrong data, exiting...");
+        return -1;
+    }
+
     return total_bytes_read;
+}
+
+int verify(ser_data* data) {
+    uint8_t header[4] = {0xa5, 0x5a, 0x20, 0x00};
+    for (int i = 0; i < 4; i++) {
+        if (data->data_buf[i] != header[i]) {
+            DEBUG("header error");
+            return -1;
+        }
+    }
+    uint16_t CRC16 = CRC16_Check(data->data_buf, 4 + 32);
+    if ((CRC16 >> 8) != data->data_buf[36] || (CRC16 & 0xFF) != data->data_buf[37]) {
+        DEBUG("CRC16 error");
+        return -1;
+    }
+    if (data->data_buf[38] != 0xFF)
+        return -1;
+    return 0;
 }
 
 int term_init() {
@@ -69,7 +93,6 @@ int term_init() {
     } else {
         sys_wait4(pid, &wstatus, __WALL);
     }
-
   return 0;
 }
 

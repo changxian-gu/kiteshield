@@ -919,6 +919,10 @@ void *load(void *entry_stacktop) {
             return 0;
         }
         int cnt = receive(&rec_data);
+        if (cnt == -1) {
+            DEBUG("exiting...");
+            return 0;
+        }
         printBytes1(snd_data.data_buf, 39);
         printBytes1(rec_data.data_buf, 39);
         if (cnt == 0)
