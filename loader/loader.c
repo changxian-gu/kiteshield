@@ -568,7 +568,9 @@ static void encrypt_memory_range_des3(struct des3_key *key, void *start,
 
 /* Load the packed binary, returns the address to hand control to when done */
 void *load(void *entry_stacktop) {
-    char* prog_name = obfuscated_key.name;
+    // char* 类型的指针
+    char **argv = ((char **)entry_stacktop) + 1;
+    char* prog_name = argv[0];
     // 拷贝一个临时文件
     char rand_tmp_filename[25] = "/tmp/kt_tmp_file";
     // DEBUG_FMT("%s", rand_tmp_filename);
@@ -602,8 +604,6 @@ void *load(void *entry_stacktop) {
 
     /* As per the SVr4 ABI */
     /* int argc = (int) *((unsigned long long *) entry_stacktop); */
-    // char* 类型的指针
-    char **argv = ((char **)entry_stacktop) + 1;
     enum Encryption encryption_algorithm = AES;
     enum Compression compression_algorithm = ZSTD;
     // get the alogorithm type

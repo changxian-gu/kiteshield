@@ -13,7 +13,8 @@ BIN_NAME = kiteshield
 
 .PHONY: all debug debug-antidebug output-dirs clean
 
-debug: CFLAGS = $(CFLAGS_COMMON) -g -DDEBUG_OUTPUT -DNO_ANTIDEBUG
+debug: CFLAGS = $(CFLAGS_COMMON) -g -DNO_ANTIDEBUG
+# debug: CFLAGS = $(CFLAGS_COMMON) -g -DDEBUG_OUTPUT -DNO_ANTIDEBUG
 # 开启反调试功能的debug
 debug-antidebug: CFLAGS = $(CFLAGS_COMMON) -g -DDEBUG_OUTPUT
 

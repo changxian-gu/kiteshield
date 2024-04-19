@@ -959,9 +959,9 @@ int main(int argc, char *argv[]) {
 
         printf("[STATE] node:1 ; message:PUF交互\n");
         // 打印读取的内容
-        printf("Line 1: %s", line1);
-        printf("Line 2: %s", line2);
-        printf("Line 3: %s", line3);
+        // printf("Line 1: %s", line1);
+        // printf("Line 2: %s", line2);
+        // printf("Line 3: %s", line3);
 
         // 关闭文件
         fclose(file);
@@ -1004,15 +1004,14 @@ int main(int argc, char *argv[]) {
         printf("[STATE] node:5 ; message:函数加密\n");
         ret = apply_inner_encryption(&elf, &rt_info);
         if (ret == -1) {
-            err("could not apply inner encryption");
-            return -1;
+            loader = GENERATED_LOADER_NO_RT;
+            loader_size = sizeof(GENERATED_LOADER_NO_RT);
+            
+        } else {
+            loader = inject_rt_info(GENERATED_LOADER_RT, rt_info,
+                                    sizeof(GENERATED_LOADER_RT), &loader_size);
         }
-
-        loader = inject_rt_info(GENERATED_LOADER_RT, rt_info,
-                                sizeof(GENERATED_LOADER_RT), &loader_size);
     } else {
-        info("not applying inner encryption and omitting runtime (-n)");
-
         loader = GENERATED_LOADER_NO_RT;
         loader_size = sizeof(GENERATED_LOADER_NO_RT);
     }
