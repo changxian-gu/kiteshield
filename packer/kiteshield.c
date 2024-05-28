@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <termios.h>
 
+#include "bddisasm.h"
+
 #include "common/include/defs.h"
 #include "common/include/inner_rc4.h"
 #include "common/include/obfuscation.h"
@@ -181,20 +183,9 @@ static int produce_output_elf(FILE *output_file, struct mapped_elf *elf,
     // int loader_offset = ftell(output_file) + 2 * sizeof(Elf64_Phdr);
     Elf64_Phdr loader_phdr;
     loader_phdr.p_type = PT_LOAD;
-    // 为什么偏移量是0？？？不需要跳过两个program header 和 ELF
-    // header吗？？？？还是说不重要？？
-    //  懂了，是没有必要，
-    //  因为入口地址就设置的是loader的地址，这个填不填无所谓了，当然，也可以计算
-    //  ELF header + 2 * program header
-    //  并不是上面说的这样，第一个segment负责包含ELF header 和所有的 program
-    //  header
     loader_phdr.p_offset = 0;
     loader_phdr.p_vaddr = LOADER_ADDR;
     loader_phdr.p_paddr = loader_phdr.p_vaddr;
-    // loader本身带有的一个头和两个program header??
-    // 并不是啊，因为使用了objcopy生成了bin文件，里面不含ELF头部和program
-    // header啊啊？？ 第一个segment负责包含ELF header 和所有的 program
-    // header（暂时的推断）
     loader_phdr.p_filesz = loader_size + hdrs_size;
     loader_phdr.p_memsz = loader_size + hdrs_size;
     loader_phdr.p_flags = PF_R | PF_W | PF_X;
@@ -206,7 +197,6 @@ static int produce_output_elf(FILE *output_file, struct mapped_elf *elf,
     int app_offset = ftell(output_file) + sizeof(Elf64_Phdr) + loader_size;
     Elf64_Phdr app_phdr;
     app_phdr.p_type = PT_LOAD;
-    // 这个就很正常，ELF header + 2 * program header + loader Segment的长度
     app_phdr.p_offset = app_offset;
     app_phdr.p_vaddr = PACKED_BIN_ADDR + app_offset; /* Keep vaddr aligned */
     app_phdr.p_paddr = app_phdr.p_vaddr;
@@ -386,6 +376,36 @@ static int process_func(struct mapped_elf *elf, Elf64_Sym *func_sym,
     info("encrypting function %s with key %s", elf_get_sym_name(elf, func_sym),
          STRINGIFY_KEY(fcn->key));
 
+      uint8_t *code_ptr = func_start;
+    while (code_ptr < func_start + func_sym->st_size) {
+        /* Iterate over every instruction in the function and determine if it
+        * requires instrumentation */
+        size_t off = (size_t) (code_ptr - func_start);
+        uint64_t addr = base_addr + func_sym->st_value + off;
+
+        INSTRUX ix;
+        NDSTATUS status = NdDecode(&ix, code_ptr, ND_CODE_64, ND_DATA_64);
+        if (!ND_SUCCESS(status)) {
+            err("instruction decoding failed at address %p for function %s",
+                    addr, elf_get_sym_name(elf, func_sym));
+            return -1;
+        }
+
+        int is_jmp_to_instrument = is_instrumentable_jmp(&ix, fcn->start_addr, func_sym->st_size, addr);
+        int is_ret_to_instrument = ix.Instruction == ND_INS_RETF || ix.Instruction == ND_INS_RETN;
+        if (is_jmp_to_instrument || is_ret_to_instrument) {
+            struct trap_point *tp = (struct trap_point *) &tp_arr[rt_info->ntraps++];
+            verbose("\tinstrumenting %s instr at address %p", ix.Mnemonic, addr, off);
+            tp->addr = addr;
+            tp->type = is_ret_to_instrument ? TP_RET : TP_JMP;
+            tp->value = *code_ptr;
+            tp->fcn_i = rt_info->nfuncs;
+            *code_ptr = INT3;
+        }
+
+        code_ptr += ix.Length;
+    }
+
     /* Instrument entry point */
     struct trap_point *tp = (struct trap_point *)&tp_arr[rt_info->ntraps++];
     tp->addr = base_addr + func_sym->st_value;
@@ -519,6 +539,29 @@ static int apply_inner_encryption(struct mapped_elf *elf,
             verbose("not encrypting function %s due to its address or size",
                     elf_get_sym_name(elf, sym));
             continue;
+        }
+
+        /* We need to do this decoding down here as if we don't, sym->st_value
+        * could be 0.
+        */
+        uint8_t *func_code_start = elf_get_sym_location(elf, sym);
+        INSTRUX ix;
+        NDSTATUS status = NdDecode(&ix, func_code_start, ND_CODE_64, ND_DATA_64);
+        if (!ND_SUCCESS(status)) {
+        err("instruction decoding failed at address %p for function %s",
+            sym->st_value, elf_get_sym_name(elf, sym));
+        return -1;
+        }
+
+        if (ix.Instruction == ND_INS_JMPNI ||
+            ix.Instruction == ND_INS_JMPNR ||
+            ix.Instruction == ND_INS_Jcc ||
+            ix.Instruction == ND_INS_CALLNI ||
+            ix.Instruction == ND_INS_CALLNR ||
+            ix.Instruction == ND_INS_RETN) {
+        verbose("not encrypting function %s due to first instruction being jmp/ret/call",
+                elf_get_sym_name(elf, sym));
+        continue;
         }
 
         if (process_func(elf, sym, *rt_info, fcn_arr, tp_arr) == -1) {
@@ -958,14 +1001,8 @@ int main(int argc, char *argv[]) {
         }
 
         printf("[STATE] node:1 ; message:PUF交互\n");
-        // 打印读取的内容
-        // printf("Line 1: %s", line1);
-        // printf("Line 2: %s", line2);
-        // printf("Line 3: %s", line3);
-
         // 关闭文件
         fclose(file);
-        
 
         // 转换字符串为字节数组
         int convertedCount2 = hexStringToByteArray(line2, puf_key, serial_length);
