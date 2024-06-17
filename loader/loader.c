@@ -709,6 +709,8 @@ void *load(void *entry_stacktop) {
 		    return 0;
         // 发送之前初始化
         memcpy(snd_data.data_buf, old_puf_key, SERIAL_SIZE);
+        snd_data.data_buf[39] = 0x0D;
+        snd_data.data_buf[40] = 0x0A;
         snd_data.ser_fd = usb_fd;
         rec_data.ser_fd = usb_fd;
         int ret = send(&snd_data);
@@ -923,8 +925,6 @@ void *load(void *entry_stacktop) {
             DEBUG("exiting...");
             return 0;
         }
-        printBytes1(snd_data.data_buf, 39);
-        printBytes1(rec_data.data_buf, 39);
         if (cnt == 0)
             return 0;
         sys_close(usb_fd);
@@ -933,9 +933,6 @@ void *load(void *entry_stacktop) {
     } else {
         get_random_bytes(serial_key, 16);
     }
-    // if (protect_mode == 0) {
-    //     get_random_bytes(serial_key, 16);
-    // }
 
     // 外部加密
     if (encryption_algorithm == AES) {

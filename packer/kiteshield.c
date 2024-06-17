@@ -317,34 +317,34 @@ static uint64_t get_base_addr(Elf64_Ehdr *ehdr) {
  * additionally contains several of these jumps as a result of handwritten asm
  * or other nonstandard internal constructs.
  */
-// static int is_instrumentable_jmp(
-//     INSTRUX *ix,
-//     uint64_t fcn_start,
-//     size_t fcn_size,
-//     uint64_t ix_addr)
-//{
-//   /* Indirect jump (eg. jump to value stored in register or at memory
-//   location.
-//    * These must always be instrumented as we have no way at pack-time of
-//    * knowing where they will hand control, thus the runtime must check them
-//    * each time and encrypt/decrypt/do nothing as needed.
-//    */
-//   if (ix->Instruction == ND_INS_JMPNI)
-//     return 1;
-//
-//   /* Jump with (known at pack-time) relative offset, check if it jumps out of
-//    * its function, if so, it requires instrumentation. */
-//   if (ix->Instruction == ND_INS_JMPNR || ix->Instruction == ND_INS_Jcc) {
-//     /* Rel is relative to next instruction so we must add the length */
-//     int64_t displacement =
-//       (int64_t) ix->Operands[0].Info.RelativeOffset.Rel + ix->Length;
-//     uint64_t jmp_dest = ix_addr + displacement;
-//     if (jmp_dest < fcn_start || jmp_dest >= fcn_start + fcn_size)
-//       return 1;
-//   }
-//
-//   return 0;
-// }
+static int is_instrumentable_jmp(
+    INSTRUX *ix,
+    uint64_t fcn_start,
+    size_t fcn_size,
+    uint64_t ix_addr)
+{
+  /* Indirect jump (eg. jump to value stored in register or at memory
+  location.
+   * These must always be instrumented as we have no way at pack-time of
+   * knowing where they will hand control, thus the runtime must check them
+   * each time and encrypt/decrypt/do nothing as needed.
+   */
+  if (ix->Instruction == ND_INS_JMPNI)
+    return 1;
+
+  /* Jump with (known at pack-time) relative offset, check if it jumps out of
+   * its function, if so, it requires instrumentation. */
+  if (ix->Instruction == ND_INS_JMPNR || ix->Instruction == ND_INS_Jcc) {
+    /* Rel is relative to next instruction so we must add the length */
+    int64_t displacement =
+      (int64_t) ix->Operands[0].Info.RelativeOffset.Rel + ix->Length;
+    uint64_t jmp_dest = ix_addr + displacement;
+    if (jmp_dest < fcn_start || jmp_dest >= fcn_start + fcn_size)
+      return 1;
+  }
+
+  return 0;
+}
 
 /* Instruments all appropriate points in the given function (function entry,
  * ret instructions, applicable jmp instructions) with int3 instructions and

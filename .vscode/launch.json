@@ -1,0 +1,31 @@
+{
+    "configurations": [
+        {
+            "name": "C/C++: make build and debug active file",
+            "type": "cppdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/packer/kiteshield",
+            "args": ["../8Q", "2", "5", "2", "../8Q_pak", "0", "../mac_info.txt", "0", "../puf_info.txt"],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ],
+            "preLaunchTask": "C/C++: gcc build active file",
+            "miDebuggerPath": "gdb"
+        }
+    ],
+    "version": "2.0.0"
+}

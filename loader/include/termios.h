@@ -132,7 +132,7 @@ struct termios {
 
 typedef struct termios termios_t;
 typedef struct serial_data {
-    unsigned char data_buf[39];
+    unsigned char data_buf[41];
     int ser_fd;
 } ser_data;
 

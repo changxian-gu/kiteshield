@@ -16,7 +16,7 @@ unsigned short int CRC16_Check(const unsigned char *data, unsigned char len) {
 }
 
 int send(ser_data* snd) {
-    ssize_t ret = sys_write(snd->ser_fd, snd->data_buf, 39);
+    ssize_t ret = sys_write(snd->ser_fd, snd->data_buf, 41);
     if (ret > 0) {
         DEBUG_FMT("send %d bytes", ret);
     } else {
@@ -32,7 +32,7 @@ void get_serial_key(uint8_t* serial_key, ser_data* rec_data) {
 int receive(ser_data* rec)
 {
     int total_bytes_read = 0;
-    int bytes_left = 39;
+    int bytes_left = 41;
     int n = 0;
 
     while (bytes_left > 0) {
@@ -50,7 +50,7 @@ int receive(ser_data* rec)
         bytes_left -= n;
     }
 
-    if (total_bytes_read == 39) {
+    if (total_bytes_read == 41) {
         DEBUG_FMT("receive %d bytes", total_bytes_read);
     } else {
         DEBUG_FMT("receive error, not enough bytes: %d", total_bytes_read);
@@ -120,4 +120,6 @@ void snd_data_init(ser_data* snd_data, uint8_t* rand) {
     snd_data->data_buf[36] = CRC16re >> 8;
     snd_data->data_buf[37] = CRC16re & 0xFF;
     snd_data->data_buf[38] = 0xFF;
+    snd_data->data_buf[39] = 0x0D;
+    snd_data->data_buf[40] = 0x0A;
 }
